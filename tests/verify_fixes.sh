@@ -54,12 +54,12 @@ if grep -q '((total_pass++)) || true' templates/scripts/validate.sh; then ok "ar
 # ── 6. Sync.sh fixes ──
 printf "\n6. sync.sh fixes\n"
 if grep -q ".agents // empty | .\[\] | .id" lib/sync.sh; then ok "agent jq query fixed"; else ko "agent jq" "not fixed"; fi
-if grep -q '_find_repo" || true' lib/sync.sh; then ok "find_repo set -e fix"; else ko "find_repo" "not fixed"; fi
+if grep -q 'REPO_DIR="\$(_find_repo)" || true' lib/sync.sh; then ok "find_repo set -e fix"; else ko "find_repo" "not fixed"; fi
 if grep -q 'npm list -g --depth=0 --json' lib/sync.sh; then ok "npm JSON parsing"; else ko "npm parsing" "not fixed"; fi
 
 # ── 7. Gum.sh fixes ──
 printf "\n7. gum.sh fixes\n"
-if grep -q 'gum confirm "\$@"' lib/gum.sh; then ok "gum_confirm passes through"; else ko "gum_confirm" "not fixed"; fi
+if grep -q 'gum confirm "\$prompt_text" "\${args\[@\]}"' lib/gum.sh; then ok "gum_confirm translates --prompt correctly"; else ko "gum_confirm" "not fixed"; fi
 if grep -q 'shift 2' lib/gum.sh; then ok "gum_spin consumes args"; else ko "gum_spin" "not fixed"; fi
 
 # ── 8. cask-map.json dedup ──
@@ -128,6 +128,10 @@ if ! grep -q '{{' "${TEST_DIR}/dotfiles_test/install.sh" 2>/dev/null; then ok "n
 # Syntax check generated scripts
 if bash -n "${TEST_DIR}/dotfiles_test/install.sh" 2>/dev/null; then ok "generated install.sh syntax OK"; else ko "install.sh syntax" "error"; fi
 if bash -n "${TEST_DIR}/dotfiles_test/bootstrap.sh" 2>/dev/null; then ok "generated bootstrap.sh syntax OK"; else ko "bootstrap.sh syntax" "error"; fi
+
+# ── 11. Generation regressions ──
+printf "\n11. Generation regressions\n"
+if bash tests/generate_regressions.sh; then ok "generate regressions"; else ko "generate regressions" "failed"; fi
 
 # ── Summary ──
 printf "\n========================================\n"

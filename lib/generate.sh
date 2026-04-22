@@ -24,6 +24,7 @@ SELECTIONS_FILE="${DOTFRIEND_CACHE_DIR}/selections.json"
 
 GEN_DIR=""
 GEN_BACKUP_ROOT=""
+GEN_DRY_RUN="false"
 
 # ─────────────────────────────────────────────────────────────
 # JSON reading (jq preferred, naive fallback)
@@ -46,6 +47,62 @@ _jq_str() {
   else
     true
   fi
+}
+
+_selected_repo_name() {
+  local repo_name
+  repo_name="$(_jq_str "$SELECTIONS_FILE" '.github.repo_name')"
+  if [[ -z "$repo_name" || "$repo_name" == "null" ]]; then
+    repo_name="dotfiles"
+  fi
+  printf '%s' "$repo_name"
+}
+
+_selected_agent_ids() {
+  if command -v jq >/dev/null 2>&1; then
+    jq -r '.agents[]? | .id' "$SELECTIONS_FILE" 2>/dev/null || true
+  fi
+}
+
+_repo_path_for_dotfile() {
+  local dotfile="$1"
+  case "$dotfile" in
+    .gitconfig)
+      printf '%s' "config/git/${dotfile}"
+      ;;
+    *)
+      printf '%s' "zsh/${dotfile}"
+      ;;
+  esac
+}
+
+_copy_tree_filtered() {
+  local src="$1" dest="$2"
+  ensure_dir "$dest"
+
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -a \
+      --exclude '.git/' \
+      --exclude '.gitignore' \
+      --exclude 'node_modules/' \
+      --exclude '.next/' \
+      --exclude 'dist/' \
+      --exclude 'build/' \
+      --exclude 'coverage/' \
+      --exclude '__pycache__/' \
+      --exclude '.pytest_cache/' \
+      --exclude '.cache/' \
+      --exclude 'tmp/' \
+      --exclude 'temp/' \
+      "$src/" "$dest/"
+    return 0
+  fi
+
+  cp -a "$src/." "$dest/"
+  find "$dest" \
+    \( -name '.git' -o -name 'node_modules' -o -name '.next' -o -name 'dist' -o -name 'build' -o -name 'coverage' -o -name '__pycache__' -o -name '.pytest_cache' -o -name '.cache' -o -name 'tmp' -o -name 'temp' \) \
+    -prune -exec rm -rf {} + 2>/dev/null || true
+  find "$dest" -name '.gitignore' -type f -delete 2>/dev/null || true
 }
 
 # ─────────────────────────────────────────────────────────────
@@ -146,7 +203,8 @@ _generate_install_sh() {
   cp "$template" "$out"
 
   # Substitute basic placeholders
-  sed -i.bak "s|{{DOTFILES_DIR}}|${GEN_DIR}|g" "$out"
+  local repo_name; repo_name="$(_selected_repo_name)"
+  sed -i.bak "s|{{DOTFILES_DIR}}|\${HOME}/${repo_name}|g" "$out"
   sed -i.bak "s|{{BACKUP_ROOT:-\${HOME}/.dotfiles-backup}}|${GEN_BACKUP_ROOT}|g" "$out"
   sed -i.bak "s|{{INSTALL_MAS:-true}}|true|g" "$out"
   sed -i.bak "s|{{BREW_UPGRADE:-true}}|true|g" "$out"
@@ -200,11 +258,11 @@ _generate_bootstrap_sh() {
 
   cp "$template" "$out"
 
-  local repo_name; repo_name="$(_jq_str "$SELECTIONS_FILE" '.github.repo_name // "dotfiles"')"
+  local repo_name; repo_name="$(_selected_repo_name)"
   local repo_url="https://github.com/$(gh api user -q '.login' 2>/dev/null || echo 'YOUR_USERNAME')/${repo_name}.git"
 
   sed -i.bak "s|{{REPO_URL}}|${repo_url}|g" "$out"
-  sed -i.bak "s|{{DOTFILES_DIR}}|${GEN_DIR}|g" "$out"
+  sed -i.bak "s|{{DOTFILES_DIR}}|\${HOME}/${repo_name}|g" "$out"
   sed -i.bak "s|{{RUN_DOTFILES_INSTALL:-true}}|true|g" "$out"
   rm -f "${out}.bak"
 
@@ -333,38 +391,43 @@ _build_symlinks_block() {
   if [[ -n "$dotfiles" ]]; then
     while IFS= read -r df; do
       [[ -z "$df" ]] && continue
-      printf '  _symlink "%s/%s" "%s/%s"\n' "$GEN_DIR" "$df" "$HOME" "$df"
+      local repo_path; repo_path="$(_repo_path_for_dotfile "$df")"
+      printf '  _symlink "$DOTFILES_DIR/%s" "$HOME/%s"\n' "$repo_path" "$df"
     done <<< "$dotfiles"
   fi
 }
 
 _build_copies_block() {
   printf "\n  # App-managed files (copied, not symlinked)\n"
-  # Karabiner
-  if [[ -d "${HOME}/.config/karabiner" ]]; then
-    printf '  _copy "%s/config/karabiner" "%s/.config/karabiner"\n' "$GEN_DIR" "$HOME"
+  local configs; configs="$(_jq_str "$SELECTIONS_FILE" '.config_dirs | if . then join("\n") else "" end')"
+  if [[ -n "$configs" ]]; then
+    while IFS= read -r cfg; do
+      [[ -z "$cfg" ]] && continue
+      printf '  _copy "$DOTFILES_DIR/config/%s" "$HOME/.config/%s"\n' "$cfg" "$cfg"
+    done <<< "$configs"
   fi
-  # Choosy
   if [[ -d "${HOME}/Library/Preferences/com.choosyosx.Choosy.plist" ]]; then
     printf "  # Choosy preferences are plist-managed; skipping symlink\n"
   fi
 }
 
 _build_agent_rsync_block() {
-  local agents; agents="$(_jq_str "$SELECTIONS_FILE" '.agents | if . then join("\n") else "" end')"
   printf "\n  # Agent config rsync\n"
-  if [[ -n "$agents" ]]; then
-    while IFS= read -r agent; do
-      [[ -z "$agent" ]] && continue
-      local agent_id; agent_id="${agent%%|*}"
-      # Read canonical dir from agent-tools.json
-      local canonical_dir
-      canonical_dir="$(jq -r --arg id "$agent_id" '.agentic_tools[] | select(.id == $id) | .canonical_dir' "${SCRIPT_DIR}/agent-tools.json" 2>/dev/null || true)"
-      if [[ -n "$canonical_dir" && "$canonical_dir" != "null" ]]; then
-        canonical_dir="${canonical_dir/#\~/${HOME}}"
-        printf '  _rsync_agent "%s/config/%s" "%s"\n' "$GEN_DIR" "$agent_id" "$canonical_dir"
-      fi
-    done <<< "$agents"
+  while IFS= read -r agent_id; do
+    [[ -z "$agent_id" ]] && continue
+    local canonical_dir
+    canonical_dir="$(jq -r --arg id "$agent_id" '.agentic_tools[] | select(.id == $id) | .canonical_dir' "${SCRIPT_DIR}/agent-tools.json" 2>/dev/null || true)"
+    if [[ -n "$canonical_dir" && "$canonical_dir" != "null" ]]; then
+      canonical_dir="${canonical_dir/#\~/${HOME}}"
+      printf '  _rsync_agent "$DOTFILES_DIR/%s" "%s"\n' "$agent_id" "$canonical_dir"
+    fi
+  done < <(_selected_agent_ids)
+
+  if [[ -d "${GEN_DIR}/agents/skills" ]]; then
+    printf '  _rsync_agent "$DOTFILES_DIR/agents/skills" "$HOME/.agents/skills"\n'
+  fi
+  if [[ -d "${GEN_DIR}/agents/agent-docs" ]]; then
+    printf '  _rsync_agent "$DOTFILES_DIR/agents/agent-docs" "$HOME/.agents/agent-docs"\n'
   fi
 }
 
@@ -390,11 +453,11 @@ _build_vscode_block() {
     local vscode; vscode="$(jq -r '.vscode // false' <<< "$editors" 2>/dev/null || true)"
     if [[ "$vscode" == "true" ]]; then
       printf "\n  # VS Code extensions\n"
-      printf '  if command -v code >/dev/null 2>&1 && [[ -f "%s/vscode/extensions.txt" ]]; then\n' "$GEN_DIR"
+      printf '  if command -v code >/dev/null 2>&1 && [[ -f "$DOTFILES_DIR/vscode/extensions.txt" ]]; then\n'
       printf "    while IFS= read -r ext; do\n"
       printf '      [[ -z "$ext" ]] && continue\n'
       printf '      soft_run code --install-extension "$ext" || true\n'
-      printf '    done < "%s/vscode/extensions.txt"\n' "$GEN_DIR"
+      printf '    done < "$DOTFILES_DIR/vscode/extensions.txt"\n'
       printf "  fi\n"
     fi
   fi
@@ -406,11 +469,11 @@ _build_cursor_block() {
     local cursor; cursor="$(jq -r '.cursor // false' <<< "$editors" 2>/dev/null || true)"
     if [[ "$cursor" == "true" ]]; then
       printf "\n  # Cursor extensions\n"
-      printf '  if command -v cursor >/dev/null 2>&1 && [[ -f "%s/cursor/extensions.txt" ]]; then\n' "$GEN_DIR"
+      printf '  if command -v cursor >/dev/null 2>&1 && [[ -f "$DOTFILES_DIR/cursor/extensions.txt" ]]; then\n'
       printf "    while IFS= read -r ext; do\n"
       printf '      [[ -z "$ext" ]] && continue\n'
       printf '      soft_run cursor --install-extension "$ext" || true\n'
-      printf '    done < "%s/cursor/extensions.txt"\n' "$GEN_DIR"
+      printf '    done < "$DOTFILES_DIR/cursor/extensions.txt"\n'
       printf "  fi\n"
     fi
   fi
@@ -422,14 +485,14 @@ _build_dock_block() {
   if [[ -n "$dock" ]] && command -v jq >/dev/null 2>&1; then
     local backup; backup="$(jq -r '.backup // false' <<< "$dock" 2>/dev/null || true)"
     if [[ "$backup" == "true" ]]; then
-      printf '  if command -v dockutil >/dev/null 2>&1 && [[ -f "%s/dock/dock-apps.txt" ]]; then\n' "$GEN_DIR"
+      printf '  if command -v dockutil >/dev/null 2>&1 && [[ -f "$DOTFILES_DIR/dock/dock-apps.txt" ]]; then\n'
       printf "    log_info \"Restoring Dock layout...\"\n"
       printf "    # Clear existing dock\n"
       printf "    dockutil --remove all --no-restart 2>/dev/null || true\n"
       printf "    while IFS= read -r app; do\n"
       printf '      [[ -z "$app" ]] && continue\n'
       printf '      soft_run dockutil --add "$app" --no-restart || true\n'
-      printf '    done < "%s/dock/dock-apps.txt"\n' "$GEN_DIR"
+      printf '    done < "$DOTFILES_DIR/dock/dock-apps.txt"\n'
       printf "    killall Dock 2>/dev/null || true\n"
       printf "  else\n"
       printf "    log_warn \"dockutil not available; skipping dock restore\"\n"
@@ -486,7 +549,7 @@ _copy_configs() {
     while IFS= read -r df; do
       [[ -z "$df" ]] && continue
       local src="${HOME}/${df}"
-      local dest="${GEN_DIR}/${df}"
+      local dest="${GEN_DIR}/$(_repo_path_for_dotfile "$df")"
       if [[ -f "$src" ]]; then
         ensure_dir "$(dirname "$dest")"
         cp "$src" "$dest"
@@ -504,8 +567,7 @@ _copy_configs() {
       local src="${HOME}/.config/${cfg}"
       local dest="${GEN_DIR}/config/${cfg}"
       if [[ -d "$src" ]]; then
-        ensure_dir "$(dirname "$dest")"
-        cp -a "$src" "$dest"
+        _copy_tree_filtered "$src" "$dest"
         log_ok "Copied ~/.config/${cfg}"
       fi
     done <<< "$configs"
@@ -558,15 +620,9 @@ _copy_editor_configs() {
 }
 
 _copy_agent_configs() {
-  local agents; agents="$(_jq_str "$SELECTIONS_FILE" '.agents | if . then join("\n") else "" end')"
-  if [[ -z "$agents" ]]; then
-    return 0
-  fi
-
   log_info "Copying agent tool configs..."
-  while IFS= read -r agent; do
-    [[ -z "$agent" ]] && continue
-    local agent_id; agent_id="${agent%%|*}"
+  while IFS= read -r agent_id; do
+    [[ -z "$agent_id" ]] && continue
 
     # Look up canonical dir in agent-tools.json
     local canonical_dir
@@ -582,14 +638,13 @@ _copy_agent_configs() {
       continue
     fi
 
-    local dest="${GEN_DIR}/config/${agent_id}"
+    local dest="${GEN_DIR}/${agent_id}"
     ensure_dir "$dest"
 
     # Read important files and dirs
-    local important_files important_dirs symlinks_to_skip
+    local important_files important_dirs
     important_files="$(jq -r --arg id "$agent_id" '.agentic_tools[] | select(.id == $id) | .important_files // [] | .[]' "${SCRIPT_DIR}/agent-tools.json" 2>/dev/null || true)"
     important_dirs="$(jq -r --arg id "$agent_id" '.agentic_tools[] | select(.id == $id) | .important_dirs // [] | .[]' "${SCRIPT_DIR}/agent-tools.json" 2>/dev/null || true)"
-    symlinks_to_skip="$(jq -r --arg id "$agent_id" '.agentic_tools[] | select(.id == $id) | .symlinks_to_skip // [] | .[]' "${SCRIPT_DIR}/agent-tools.json" 2>/dev/null || true)"
 
     # Copy files
     while IFS= read -r f; do
@@ -608,13 +663,22 @@ _copy_agent_configs() {
       [[ -z "$d" ]] && continue
       local src="${canonical_dir}/${d}"
       if [[ -d "$src" && ! -L "$src" ]]; then
-        cp -a "$src" "${dest}/"
+        _copy_tree_filtered "$src" "${dest}/${d}"
         log_ok "Copied ${d}/ for ${agent_id}"
       elif [[ -L "$src" ]]; then
         log_info "Skipping symlinked dir: ${src}"
       fi
     done <<< "$important_dirs"
-  done <<< "$agents"
+  done < <(_selected_agent_ids)
+
+  if [[ -d "${HOME}/.agents/skills" ]]; then
+    _copy_tree_filtered "${HOME}/.agents/skills" "${GEN_DIR}/agents/skills"
+    log_ok "Copied ~/.agents/skills"
+  fi
+  if [[ -d "${HOME}/.agents/agent-docs" ]]; then
+    _copy_tree_filtered "${HOME}/.agents/agent-docs" "${GEN_DIR}/agents/agent-docs"
+    log_ok "Copied ~/.agents/agent-docs"
+  fi
 }
 
 _copy_dock() {
@@ -667,7 +731,7 @@ _copy_scripts() {
 _init_git() {
   log_info "Initializing git repository..."
   if [[ -d "${GEN_DIR}/.git" ]]; then
-    log_warn "Git repo already exists"
+    log_warn "Local git repo already exists at ${GEN_DIR}"
     return 0
   fi
 
@@ -685,7 +749,7 @@ _init_git() {
 # ─────────────────────────────────────────────────────────────
 
 _github_push() {
-  local repo_name; repo_name="$(_jq_str "$SELECTIONS_FILE" '.github.repo_name // "dotfiles"')"
+  local repo_name; repo_name="$(_selected_repo_name)"
   if [[ -z "$repo_name" || "$repo_name" == "null" ]]; then
     log_info "No GitHub repo configured; skipping push"
     return 0
@@ -710,17 +774,24 @@ _github_push() {
     return 0
   fi
 
-  if [[ "$DRY_RUN" == "true" ]]; then
+  if [[ "$GEN_DRY_RUN" == "true" ]]; then
     log_info "[dry-run] Would create GitHub repo ${username}/${repo_name}"
     return 0
   fi
 
-  log_info "Creating private GitHub repo: ${username}/${repo_name}"
-  if ! gh repo create "$repo_name" --private --source=. --push 2>/dev/null; then
-    log_warn "Repo may already exist or creation failed; attempting to add remote and push"
+  if gh repo view "${username}/${repo_name}" >/dev/null 2>&1; then
+    log_warn "GitHub repo already exists: ${username}/${repo_name}"
     git remote add origin "https://github.com/${username}/${repo_name}.git" 2>/dev/null || true
     git branch -M main 2>/dev/null || true
     git push -u origin main 2>/dev/null || git push -u origin master 2>/dev/null || true
+    log_ok "Pushed to https://github.com/${username}/${repo_name}"
+    return 0
+  fi
+
+  log_info "Creating private GitHub repo: ${username}/${repo_name}"
+  if ! gh repo create "$repo_name" --private --source=. --push; then
+    log_warn "GitHub repo creation failed for ${username}/${repo_name}"
+    return 1
   fi
 
   log_ok "Pushed to https://github.com/${username}/${repo_name}"
@@ -731,16 +802,18 @@ _github_push() {
 # ─────────────────────────────────────────────────────────────
 
 generate_repo() {
-  local target_dir="${1:-${HOME}/dotfiles}"
+  local target_dir="${1-}"
   local dry_run="${2:-false}"
+  local repo_name; repo_name="$(_selected_repo_name)"
 
   # Ensure we always use an absolute path
   if [[ -z "$target_dir" ]]; then
-    target_dir="${HOME}/dotfiles"
+    target_dir="${HOME}/${repo_name}"
   fi
 
   GEN_DIR="$target_dir"
   GEN_BACKUP_ROOT="${HOME}/.dotfiles-backup"
+  GEN_DRY_RUN="$dry_run"
 
   if [[ "$dry_run" == "true" ]]; then
     log_info "[dry-run] Would generate repo at ${GEN_DIR}"
@@ -757,6 +830,7 @@ generate_repo() {
   ensure_dir "$GEN_DIR"
   ensure_dir "${GEN_DIR}/scripts/lib"
   ensure_dir "${GEN_DIR}/config"
+  ensure_dir "${GEN_DIR}/config/git"
   ensure_dir "${GEN_DIR}/zsh"
   ensure_dir "${GEN_DIR}/vscode"
   ensure_dir "${GEN_DIR}/cursor"
