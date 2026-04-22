@@ -223,20 +223,95 @@ _bundle_id_for_app() {
   return 0
 }
 
+# Batch-lookup receipt-backed apps in the local mas install list.
+# Input: newline-separated app names via stdin
+# Output: lines of "app_name|mas:MAS Name,id:123456789" for each match
+_batch_lookup_mas_receipt_apps() {
+  if ! command -v mas >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local apps_input mas_output
+  apps_input="$(cat)"
+  [[ -n "$apps_input" ]] || return 0
+
+  mas_output="$(mas list 2>/dev/null || true)"
+  [[ -n "$mas_output" ]] || return 0
+
+  awk '
+    function norm(value) {
+      value = tolower(value)
+      sub(/\.app$/, "", value)
+      gsub(/\+/, "plus", value)
+      gsub(/[^a-z0-9]+/, "", value)
+      return value
+    }
+
+    NR == FNR {
+      if ($0 == "") {
+        next
+      }
+      apps[++app_count] = $0
+      next
+    }
+
+    $0 !~ /^[0-9]+[[:space:]]+/ {
+      next
+    }
+
+    {
+      id = $1
+      line = $0
+      sub(/^[0-9]+[[:space:]]+/, "", line)
+      name = line
+      sub(/[[:space:]]+\([^()]*\)[[:space:]]*$/, "", name)
+      if (!(name in exact_id)) {
+        exact_id[name] = id
+        exact_name[name] = name
+      }
+      key = norm(name)
+      if (!(key in norm_id)) {
+        norm_id[key] = id
+        norm_name[key] = name
+      }
+    }
+
+    END {
+      for (i = 1; i <= app_count; i++) {
+        app = apps[i]
+        if (app in exact_id) {
+          printf "%s|mas:%s,id:%s\n", app, exact_name[app], exact_id[app]
+          continue
+        }
+
+        key = norm(app)
+        if (key in norm_id) {
+          printf "%s|mas:%s,id:%s\n", app, norm_name[key], norm_id[key]
+        }
+      }
+    }
+  ' <(printf '%s\n' "$apps_input") <(printf '%s\n' "$mas_output")
+}
+
 # ─────────────────────────────────────────────────────────────
 # App discovery
 # ─────────────────────────────────────────────────────────────
 
 # Scan /Applications and ~/Applications, cross-referencing with Homebrew
 # casks and local App Store receipts.
-# Output format: App Name|cask:<token>  or  App Name|appstore:<bundle-id>  or  App Name|manual
+# Output format: App Name|cask:<token>  or  App Name|mas:<name>,id:<id>
+#   or App Name|appstore:<bundle-id>  or  App Name|manual
 discover_apps() {
   local -a apps=()
+  local -a receipt_apps=()
   local app_name
 
   while IFS= read -r app_name; do
     [[ -n "$app_name" ]] || continue
     apps+=("$app_name")
+    if _app_has_mas_receipt "$app_name"; then
+      receipt_apps+=("$app_name")
+    fi
   done < <(_collect_installed_app_names | sort -u)
 
   if [[ ${#apps[@]} -eq 0 ]]; then
@@ -249,6 +324,12 @@ discover_apps() {
   # ── Tier 1: Batch lookup all apps in the Homebrew API ──
   local api_matches=""
   api_matches="$(printf '%s\n' "${apps[@]}" | _batch_lookup_cask_in_api)"
+
+  # ── Tier 2: Batch lookup receipt-backed apps in mas ──
+  local mas_matches=""
+  if [[ ${#receipt_apps[@]} -gt 0 ]]; then
+    mas_matches="$(printf '%s\n' "${receipt_apps[@]}" | _batch_lookup_mas_receipt_apps)"
+  fi
 
   # ── Resolve each app ──
   for app_name in "${apps[@]}"; do
@@ -269,7 +350,15 @@ discover_apps() {
       continue
     fi
 
-    # Tier 3: Local App Store receipt
+    # Tier 3: mas-installed App Store app
+    local mas_match=""
+    mas_match="$(printf '%s\n' "$mas_matches" | awk -F'|' -v app="$app_name" '$1 == app { print $0; exit }')"
+    if [[ -n "$mas_match" ]]; then
+      printf '%s\n' "$mas_match"
+      continue
+    fi
+
+    # Tier 4: Local App Store receipt without a mas match
     if _app_has_mas_receipt "$app_name"; then
       local bundle_id
       bundle_id="$(_bundle_id_for_app "$app_name")"
@@ -281,7 +370,7 @@ discover_apps() {
       continue
     fi
 
-    # Tier 4: manual
+    # Tier 5: manual
     printf '%s|manual\n' "$app_name"
   done | sort -u
 }
