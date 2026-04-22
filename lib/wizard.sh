@@ -761,9 +761,5 @@ wizard_start() {
   _step12_github
 
   log_ok "Wizard complete!"
-  gum_style --foreground 240 "Your selections are ready for code generation:"
-  printf '%s\n' "$SELECTIONS_FILE"
-
-  # Output the final JSON to stdout so callers can capture it
-  cat "$SELECTIONS_FILE"
+  gum_style --foreground 240 "Your selections are ready for code generation."
 }

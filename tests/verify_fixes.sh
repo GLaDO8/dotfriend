@@ -62,8 +62,13 @@ printf "\n7. gum.sh fixes\n"
 if grep -q 'gum confirm "\$prompt_text" "\${args\[@\]}"' lib/gum.sh; then ok "gum_confirm translates --prompt correctly"; else ko "gum_confirm" "not fixed"; fi
 if grep -q 'shift 2' lib/gum.sh; then ok "gum_spin consumes args"; else ko "gum_spin" "not fixed"; fi
 
-# ── 8. cask-map.json dedup ──
-printf "\n8. cask-map.json dedup\n"
+# ── 8. Wizard output stays quiet ──
+printf "\n8. Wizard output stays quiet\n"
+if ! grep -q 'cat "\$SELECTIONS_FILE"' lib/wizard.sh; then ok "wizard no longer dumps selections json"; else ko "wizard json dump" "still present"; fi
+if ! grep -q "printf '%s\\\\n' \"\$SELECTIONS_FILE\"" lib/wizard.sh; then ok "wizard no longer prints selections file path"; else ko "wizard selections path" "still present"; fi
+
+# ── 9. cask-map.json dedup ──
+printf "\n9. cask-map.json dedup\n"
 DUPES=$(python3 -c "
 import json, re
 from collections import Counter
@@ -74,8 +79,8 @@ print(len(dupes))
 ")
 if [[ "$DUPES" == "0" ]]; then ok "zero duplicates"; else ko "duplicates" "$DUPES remaining"; fi
 
-# ── 9. Generated script guards ──
-printf "\n9. Template guards\n"
+# ── 10. Generated script guards ──
+printf "\n10. Template guards\n"
 if grep -q 'rm -rf "\$dest" || {' templates/install.sh; then ok "install.sh symlink guarded"; else ko "symlink guard" "missing"; fi
 if grep -q 'git clone' templates/bootstrap.sh | grep -q '|| {' templates/bootstrap.sh; then
   ok "bootstrap.sh git clone guarded"
@@ -85,8 +90,8 @@ else
 fi
 if grep -q 'config_dir:?' templates/scripts/backup.sh; then ok "backup.sh rm -rf safe"; else ko "backup.sh safety" "missing"; fi
 
-# ── 10. Test with mock selections ──
-printf "\n10. Repo generation with mock selections\n"
+# ── 11. Test with mock selections ──
+printf "\n11. Repo generation with mock selections\n"
 cat > "$DOTFRIEND_CACHE_DIR/selections.json" <<'EOF'
 {
   "apps": [{"name":"Spotify","cask":"spotify","source":"cask"}],
@@ -129,8 +134,8 @@ if ! grep -q '{{' "${TEST_DIR}/dotfiles_test/install.sh" 2>/dev/null; then ok "n
 if bash -n "${TEST_DIR}/dotfiles_test/install.sh" 2>/dev/null; then ok "generated install.sh syntax OK"; else ko "install.sh syntax" "error"; fi
 if bash -n "${TEST_DIR}/dotfiles_test/bootstrap.sh" 2>/dev/null; then ok "generated bootstrap.sh syntax OK"; else ko "bootstrap.sh syntax" "error"; fi
 
-# ── 11. Generation regressions ──
-printf "\n11. Generation regressions\n"
+# ── 12. Generation regressions ──
+printf "\n12. Generation regressions\n"
 if bash tests/generate_regressions.sh; then ok "generate regressions"; else ko "generate regressions" "failed"; fi
 
 # ── Summary ──
