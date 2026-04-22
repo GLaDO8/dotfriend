@@ -15,12 +15,6 @@ The generated repo includes a `bootstrap.sh` for brand-new Macs and an `install.
 ## Installation
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/GLaDO8/dotfriend/main/install.sh | bash
-```
-
-Or clone and run directly:
-
-```bash
 git clone https://github.com/GLaDO8/dotfriend.git
 cd dotfriend
 ./dotfriend start
@@ -68,30 +62,6 @@ Only config files are backed up — never chat history, cache, or logs.
 | **Windsurf** | `settings.json`, `keybindings.json`, `extensions/` |
 | **Cline** | `settings.json` |
 | **Trae** | `settings.json`, `keybindings.json`, `extensions/` |
-
-## Generated repo structure
-
-```
-dotfiles/
-├── Brewfile              # taps, brews, casks, mas apps
-├── install.sh            # Full restore script (phased, dry-run capable)
-├── bootstrap.sh          # First-run script for brand-new Macs
-├── scripts/
-│   ├── validate.sh       # Post-install validation
-│   ├── backup.sh         # Reverse-sync machine state back to repo
-│   └── lib/              # Shared helpers
-├── config/               # App configs symlinked to ~/.config/
-├── zsh/                  # .zshrc, plugins
-├── vscode/               # settings.json, extensions.txt
-├── cursor/               # settings.json, keybindings.json, extensions.txt
-├── claude/               # CLAUDE.md, settings.json, hooks/, rules/
-├── codex/                # AGENTS.md, RTK.md, skills/
-├── agents/               # Shared agent skills and docs
-├── dock/
-│   └── dock-apps.txt     # Restorable Dock layout
-├── .gitignore
-└── locations.md          # Auto-generated config location reference
-```
 
 ## Requirements
 
