@@ -15,6 +15,12 @@ The generated repo includes a `bootstrap.sh` for brand-new Macs and an `install.
 ## Installation
 
 ```bash
+npx dotfriend start
+```
+
+Or clone and run directly:
+
+```bash
 git clone https://github.com/GLaDO8/dotfriend.git
 cd dotfriend
 ./dotfriend start
