@@ -1,0 +1,94 @@
+{
+  "agentic_tools": [
+    {
+      "name": "Claude Code",
+      "id": "claude",
+      "config_dirs": ["~/.claude"],
+      "important_files": ["CLAUDE.md", "settings.json", "statusline.sh", "statusline.conf"],
+      "important_dirs": ["hooks", "rules", "plugins"],
+      "canonical_dir": "~/.claude",
+      "symlinks_to_skip": ["~/.claude/skills", "~/.claude/agent-docs"]
+    },
+    {
+      "name": "OpenAI Codex",
+      "id": "codex",
+      "config_dirs": ["~/.codex"],
+      "important_files": ["AGENTS.md", "RTK.md", "CLAUDE.md", "settings.json"],
+      "important_dirs": ["skills", "agent-docs"],
+      "canonical_dir": "~/.codex",
+      "symlinks_to_skip": ["~/.codex/skills"]
+    },
+    {
+      "name": "Cursor",
+      "id": "cursor",
+      "config_dirs": ["~/.cursor"],
+      "important_files": ["settings.json", "mcp.json", "keybindings.json"],
+      "important_dirs": ["extensions", "rules"],
+      "canonical_dir": "~/.cursor",
+      "symlinks_to_skip": []
+    },
+    {
+      "name": "Aider",
+      "id": "aider",
+      "config_dirs": ["~/.aider"],
+      "important_files": [".aider.conf.yml", ".aider.model.settings.yml", ".aiderignore"],
+      "important_dirs": [],
+      "canonical_dir": "~/.aider",
+      "symlinks_to_skip": []
+    },
+    {
+      "name": "Continue.dev",
+      "id": "continue",
+      "config_dirs": ["~/.continue"],
+      "important_files": ["config.json", "config.ts"],
+      "important_dirs": [".prompts"],
+      "canonical_dir": "~/.continue",
+      "symlinks_to_skip": []
+    },
+    {
+      "name": "GitHub Copilot CLI",
+      "id": "copilot",
+      "config_dirs": ["~/.config/github-copilot"],
+      "important_files": [],
+      "important_dirs": [],
+      "canonical_dir": "~/.config/github-copilot",
+      "symlinks_to_skip": []
+    },
+    {
+      "name": "Zed",
+      "id": "zed",
+      "config_dirs": ["~/.config/zed"],
+      "important_files": ["settings.json", "keymap.json"],
+      "important_dirs": ["themes"],
+      "canonical_dir": "~/.config/zed",
+      "symlinks_to_skip": []
+    },
+    {
+      "name": "Windsurf",
+      "id": "windsurf",
+      "config_dirs": ["~/.windsurf"],
+      "important_files": ["settings.json", "keybindings.json"],
+      "important_dirs": ["extensions"],
+      "canonical_dir": "~/.windsurf",
+      "symlinks_to_skip": []
+    },
+    {
+      "name": "Cline",
+      "id": "cline",
+      "config_dirs": ["~/.cline"],
+      "important_files": ["settings.json"],
+      "important_dirs": [],
+      "canonical_dir": "~/.cline",
+      "symlinks_to_skip": []
+    },
+    {
+      "name": "Trae",
+      "id": "trae",
+      "config_dirs": ["~/.trae"],
+      "important_files": ["settings.json", "keybindings.json"],
+      "important_dirs": ["extensions"],
+      "canonical_dir": "~/.trae",
+      "symlinks_to_skip": []
+    }
+  ]
+}
