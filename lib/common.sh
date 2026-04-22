@@ -8,7 +8,7 @@ set -euo pipefail
 # Paths
 # ─────────────────────────────────────────────────────────────
 
-DOTFRIEND_VERSION="0.1.0"
+DOTFRIEND_VERSION="0.2.0"
 DOTFRIEND_CACHE_DIR="${HOME}/.cache/dotfriend"
 DOTFRIEND_CONFIG_DIR="${HOME}/.config/dotfriend"
 

@@ -29,7 +29,7 @@ done
 # ── 2. CLI basics ──
 printf "\n2. CLI basics\n"
 if ./dotfriend --help >/dev/null 2>&1; then ok "--help"; else ko "--help" "failed"; fi
-if ./dotfriend --version | grep -q "0.1.0"; then ok "--version"; else ko "--version" "wrong output"; fi
+if ./dotfriend --version | grep -q "0.2.0"; then ok "--version"; else ko "--version" "wrong output"; fi
 if ! ./dotfriend badcmd >/dev/null 2>&1; then ok "unknown command exits non-zero"; else ko "unknown command" "should fail"; fi
 
 # ── 3. Entry script local bug ──
