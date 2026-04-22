@@ -247,6 +247,11 @@ _step1_apps() {
       cask="mas:${mas_cask},id:${mas_id}"
       source="mas"
       display="$name (mas: $mas_cask)"
+    elif [[ "$rest" == appstore:* ]]; then
+      local appstore_id="${rest#appstore:}"
+      cask="appstore:${appstore_id}"
+      source="appstore"
+      display="$name (App Store detected)"
     elif [[ "$rest" == "manual" ]]; then
       source="manual"
       display="$name (manual)"
@@ -284,8 +289,8 @@ _step1_apps() {
         local s_source="${sources[$i]}"
 
         # Skip apps with no cask found — don't prompt for manual entry
-        if [[ "$s_source" == "unknown" || -z "$s_cask" || "$s_source" == "manual" ]]; then
-          log_info "Skipping $s_name (no cask found)"
+        if [[ "$s_source" == "unknown" || -z "$s_cask" || "$s_source" == "manual" || "$s_source" == "appstore" ]]; then
+          log_info "Skipping $s_name (not restorable automatically)"
           continue
         fi
 

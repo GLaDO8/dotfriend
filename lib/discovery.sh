@@ -14,77 +14,275 @@ source "${SCRIPT_DIR}/common.sh"
 source "${SCRIPT_DIR}/gum.sh"
 
 # ─────────────────────────────────────────────────────────────
+# Cask API helpers
+# ─────────────────────────────────────────────────────────────
+
+# Cache file path
+_CASK_API_JSON="${DOTFRIEND_CACHE_DIR}/cask-api.json"
+
+# Fetch the Homebrew cask API and cache it locally.
+# Skips download if cache is less than 24 hours old.
+_fetch_cask_api() {
+  ensure_dir "$DOTFRIEND_CACHE_DIR"
+
+  local max_age=86400  # 24 hours in seconds
+  if [[ -f "$_CASK_API_JSON" ]]; then
+    local mtime age
+    mtime="$(stat -f %m "$_CASK_API_JSON" 2>/dev/null || stat -c %Y "$_CASK_API_JSON" 2>/dev/null || printf '0')"
+    age="$(($(date +%s) - mtime))"
+    if [[ "$age" -lt "$max_age" ]]; then
+      return 0
+    fi
+  fi
+
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "https://formulae.brew.sh/api/cask.json" -o "$_CASK_API_JSON" 2>/dev/null || true
+  fi
+}
+
+# Batch-lookup app names in the cached Homebrew API.
+# Input: newline-separated app names via stdin
+# Output: lines of "app_name|cask:token" for each match
+_batch_lookup_cask_in_api() {
+  if [[ ! -f "$_CASK_API_JSON" ]] || ! command -v jq >/dev/null 2>&1; then
+    return
+  fi
+
+  local apps_json
+  apps_json="$(jq -R -s 'split("\n") | map(select(length > 0))' 2>/dev/null || true)"
+  [[ -n "$apps_json" ]] || return
+
+  jq \
+    --slurpfile api "$_CASK_API_JSON" \
+    --argjson apps "$apps_json" \
+    -n \
+    -r \
+    '
+    def uniq_preserve:
+      reduce .[] as $x ([]; if index($x) == null then . + [$x] else . end);
+
+    def normalized_key:
+      ascii_downcase
+      | sub("\\.app$"; "")
+      | gsub("\\+"; "plus")
+      | gsub("[^a-z0-9]+"; "");
+
+    def stripped_version:
+      sub("([\\-_ ]+)?v?[0-9]+(\\.[0-9]+)+(?:[\\-_ ].*)?$"; "")
+      | sub("([\\-_ ]+)20[0-9]{2}$"; "")
+      | if test(".*[^0-9][0-9]$") then sub("[0-9]+$"; "") else . end
+      | gsub("^[\\-_. ]+|[\\-_. ]+$"; "");
+
+    def version_key:
+      stripped_version | normalized_key;
+
+    def stable_candidates:
+      map(select(
+        (contains("@") | not) and
+        (contains("beta") | not) and
+        (contains("nightly") | not) and
+        (contains("preview") | not) and
+        (contains("tip") | not)
+      ));
+
+    def choose_token($tokens):
+      ($tokens | uniq_preserve) as $uniq |
+      if ($uniq | length) == 0 then
+        null
+      else
+        (($uniq | stable_candidates)[0] // $uniq[0])
+      end;
+
+    def embedded_app_name:
+      split("/") | map(select(endswith(".app"))) | last? |
+      if . == null then empty else sub("\\.app$"; "") end;
+
+    def artifact_paths($c):
+      [
+        (($c.artifacts // [])[]? | .uninstall[]? | .delete?),
+        (($c.artifacts // [])[]? | .installer[]? | .script.executable?)
+      ]
+      | .[]
+      | if type == "array" then .[] else . end
+      | select(type == "string");
+
+    ($api[0] | reduce .[] as $c ({
+      app_map: {},
+      name_map: {},
+      token_norm_map: {},
+      path_norm_map: {},
+      version_norm_map: {}
+    };
+      ($c.token) as $token |
+      .token_norm_map[($token | normalized_key)] =
+        ((.token_norm_map[($token | normalized_key)] // []) + [$token]) |
+      .version_norm_map[($token | version_key)] =
+        ((.version_norm_map[($token | version_key)] // []) + [$token]) |
+      reduce
+        (($c.artifacts // []) | .[] | select(has("app")) | .app | .[] | select(type == "string"))
+        as $a (.;
+          .app_map[($a | ascii_downcase | sub("\\.app$"; ""))] =
+            ((.app_map[($a | ascii_downcase | sub("\\.app$"; ""))] // []) + [$token]) |
+          .version_norm_map[($a | version_key)] =
+            ((.version_norm_map[($a | version_key)] // []) + [$token])
+        ) |
+      reduce
+        (($c.name // []) | .[] | select(type == "string"))
+        as $n (.;
+          .name_map[($n | ascii_downcase)] = ((.name_map[($n | ascii_downcase)] // []) + [$token])
+        ) |
+      reduce
+        (artifact_paths($c) | embedded_app_name)
+        as $path_app (.;
+          .path_norm_map[($path_app | normalized_key)] =
+            ((.path_norm_map[($path_app | normalized_key)] // []) + [$token]) |
+          .version_norm_map[($path_app | version_key)] =
+            ((.version_norm_map[($path_app | version_key)] // []) + [$token])
+        )
+    )) as $indexes |
+
+    $apps[] as $app |
+    ($app | ascii_downcase) as $app_lc |
+    ($app | normalized_key) as $app_norm |
+    ($app | version_key) as $app_version_norm |
+    (
+      if $indexes.app_map[$app_lc] != null then $indexes.app_map[$app_lc]
+      elif $indexes.name_map[$app_lc] != null then $indexes.name_map[$app_lc]
+      elif $indexes.token_norm_map[$app_norm] != null then $indexes.token_norm_map[$app_norm]
+      elif $indexes.path_norm_map[$app_norm] != null then $indexes.path_norm_map[$app_norm]
+      else $indexes.version_norm_map[$app_version_norm]
+      end
+    ) as $tokens |
+    (choose_token($tokens // [])) as $chosen |
+    select($chosen != null) |
+    "\($app)|cask:\($chosen)"
+    ' 2>/dev/null || true
+}
+
+_override_cask_for_app() {
+  case "$1" in
+    ".Karabiner-VirtualHIDDevice-Manager"|"Karabiner-EventViewer")
+      printf '%s\n' "karabiner-elements"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+_app_search_roots() {
+  local roots_spec="${DOTFRIEND_APP_SEARCH_DIRS:-/Applications:${HOME}/Applications}"
+  local -a roots=()
+  local root
+
+  IFS=':' read -r -a roots <<< "$roots_spec"
+  for root in "${roots[@]}"; do
+    [[ -n "$root" ]] || continue
+    printf '%s\n' "$root"
+  done
+}
+
+_collect_installed_app_names() {
+  local root app app_name
+  while IFS= read -r root; do
+    [[ -d "$root" ]] || continue
+    while IFS= read -r app; do
+      [[ -n "$app" ]] || continue
+      app_name="${app##*/}"
+      app_name="${app_name%.app}"
+      printf '%s\n' "$app_name"
+    done < <(find "$root" -maxdepth 1 -name '*.app' -print 2>/dev/null || true)
+  done < <(_app_search_roots)
+}
+
+_app_has_mas_receipt() {
+  local app_name="$1"
+  local root
+  while IFS= read -r root; do
+    [[ -d "$root" ]] || continue
+    if [[ -d "$root/${app_name}.app/Contents/_MASReceipt" ]]; then
+      return 0
+    fi
+  done < <(_app_search_roots)
+  return 1
+}
+
+_bundle_id_for_app() {
+  local app_name="$1"
+  local root plist
+
+  while IFS= read -r root; do
+    [[ -d "$root" ]] || continue
+    plist="$root/${app_name}.app/Contents/Info.plist"
+    if [[ -f "$plist" ]]; then
+      plutil -extract CFBundleIdentifier raw "$plist" 2>/dev/null || true
+      return 0
+    fi
+  done < <(_app_search_roots)
+
+  return 0
+}
+
+# ─────────────────────────────────────────────────────────────
 # App discovery
 # ─────────────────────────────────────────────────────────────
 
 # Scan /Applications and ~/Applications, cross-referencing with Homebrew
-# casks and Mac App Store (mas) entries.
-# Output format: App Name|cask:<token>  or  App Name|mas:<name>,id:<id>  or  App Name|manual
+# casks and local App Store receipts.
+# Output format: App Name|cask:<token>  or  App Name|appstore:<bundle-id>  or  App Name|manual
 discover_apps() {
   local -a apps=()
-  local app app_name
+  local app_name
 
-  for app in /Applications/*.app "${HOME}"/Applications/*.app; do
-    # Skip literal globs when directory is empty
-    [[ -e "$app" ]] || continue
-    [[ "$app" == "/Applications/*.app" ]] && continue
-    [[ "$app" == "${HOME}/Applications/*.app" ]] && continue
-    app_name="$(basename "$app" .app)"
+  while IFS= read -r app_name; do
+    [[ -n "$app_name" ]] || continue
     apps+=("$app_name")
-  done
+  done < <(_collect_installed_app_names | sort -u)
 
   if [[ ${#apps[@]} -eq 0 ]]; then
     return 0
   fi
 
-  local casks=""
-  local mas_apps=""
-  local cask_map_file="${SCRIPT_DIR}/cask-map.json"
-  local cask_map=""
+  # ── Tier 0: Fetch Homebrew cask API ──
+  _fetch_cask_api
 
-  if has_brew; then
-    casks="$(brew list --cask 2>/dev/null || true)"
-  fi
+  # ── Tier 1: Batch lookup all apps in the Homebrew API ──
+  local api_matches=""
+  api_matches="$(printf '%s\n' "${apps[@]}" | _batch_lookup_cask_in_api)"
 
-  if command -v mas >/dev/null 2>&1; then
-    mas_apps="$(mas list 2>/dev/null || true)"
-  fi
-
-  # Load cask-map.json if available
-  if [[ -f "$cask_map_file" ]] && command -v jq >/dev/null 2>&1; then
-    cask_map="$(cat "$cask_map_file")"
-  fi
-
-  local cask_name mas_line mas_id mapped_cask
-
+  # ── Resolve each app ──
   for app_name in "${apps[@]}"; do
-    # Heuristic: lowercase with hyphens matches most cask tokens
-    cask_name="$(printf '%s' "$app_name" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')"
-    mapped_cask=""
+    local api_match=""
+    api_match="$(printf '%s\n' "$api_matches" | awk -F'|' -v app="$app_name" '$1 == app { print $0; exit }')"
 
-    # Look up in cask-map.json first
-    if [[ -n "$cask_map" ]]; then
-      mapped_cask="$(printf '%s' "$cask_map" | jq -r --arg key "$app_name.app" '.[$key] // empty' 2>/dev/null || true)"
+    # Tier 1: Homebrew API index
+    if [[ -n "$api_match" ]]; then
+      printf '%s\n' "$api_match"
+      continue
     fi
 
-    if [[ -n "$mas_apps" ]] && mas_line="$(printf '%s\n' "$mas_apps" | grep -iF "$app_name" | head -n1)"; then
-      mas_id="$(printf '%s' "$mas_line" | awk '{print $1}')"
-      # Use mapped cask name if available, otherwise heuristic
-      if [[ -n "$mapped_cask" && "$mapped_cask" != "null" ]]; then
-        printf '%s|mas:%s,id:%s\n' "$app_name" "$mapped_cask" "$mas_id"
+    # Tier 2: curated overrides for helper apps shipped by a parent cask
+    local override_cask=""
+    override_cask="$(_override_cask_for_app "$app_name" 2>/dev/null || true)"
+    if [[ -n "$override_cask" ]]; then
+      printf '%s|cask:%s\n' "$app_name" "$override_cask"
+      continue
+    fi
+
+    # Tier 3: Local App Store receipt
+    if _app_has_mas_receipt "$app_name"; then
+      local bundle_id
+      bundle_id="$(_bundle_id_for_app "$app_name")"
+      if [[ -n "$bundle_id" ]]; then
+        printf '%s|appstore:%s\n' "$app_name" "$bundle_id"
       else
-        printf '%s|mas:%s,id:%s\n' "$app_name" "$cask_name" "$mas_id"
+        printf '%s|appstore:receipt\n' "$app_name"
       fi
-    elif [[ -n "$mapped_cask" && "$mapped_cask" != "null" ]]; then
-      # Found in cask-map.json — include even if not currently installed via brew
-      printf '%s|cask:%s\n' "$app_name" "$mapped_cask"
-    elif [[ -n "$casks" ]] && printf '%s\n' "$casks" | grep -qiFx "$cask_name"; then
-      printf '%s|cask:%s\n' "$app_name" "$cask_name"
-    elif [[ -n "$casks" ]] && printf '%s\n' "$casks" | grep -qiFx "$app_name"; then
-      printf '%s|cask:%s\n' "$app_name" "$app_name"
-    else
-      printf '%s|manual\n' "$app_name"
+      continue
     fi
+
+    # Tier 4: manual
+    printf '%s|manual\n' "$app_name"
   done | sort -u
 }
 

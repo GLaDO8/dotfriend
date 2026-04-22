@@ -13,8 +13,8 @@ cd "$PROJECT"
 PASS=0
 FAIL=0
 
-ok() { printf "  ✅ %s\n" "$1"; ((PASS++)); }
-ko() { printf "  ❌ %s: %s\n" "$1" "$2"; ((FAIL++)); }
+ok() { printf "  ✅ %s\n" "$1"; ((PASS++)) || true; }
+ko() { printf "  ❌ %s: %s\n" "$1" "$2"; ((FAIL++)) || true; }
 
 # ── 1. Syntax check all bash files ──
 printf "\n1. Syntax checks\n"
