@@ -68,6 +68,7 @@ test_repo_name_and_github_push() {
   local bin_dir="${TEST_DIR}/repo_name/bin"
   local gh_log="${TEST_DIR}/repo_name/gh.log"
   local gh_pwd_log="${TEST_DIR}/repo_name/gh-pwd.log"
+  local git_log="${TEST_DIR}/repo_name/git.log"
   mkdir -p "$bin_dir"
 
   cat > "${bin_dir}/gh" <<'EOF'
@@ -98,9 +99,38 @@ exit 0
 EOF
   chmod +x "${bin_dir}/gh"
 
+  cat > "${bin_dir}/git" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "${GIT_LOG:?}"
+case "${1:-}" in
+  init)
+    mkdir -p .git
+    printf 'NOISY_GIT_INIT_STDOUT\n'
+    printf 'NOISY_GIT_INIT_STDERR\n' >&2
+    exit 0
+    ;;
+  add)
+    printf 'NOISY_GIT_ADD_STDOUT\n'
+    exit 0
+    ;;
+  commit)
+    printf 'NOISY_GIT_COMMIT_STDOUT\n'
+    exit 0
+    ;;
+  remote|branch|push)
+    printf 'NOISY_GIT_PUSH_STDOUT\n'
+    exit 0
+    ;;
+esac
+exit 0
+EOF
+  chmod +x "${bin_dir}/git"
+
   PATH="${bin_dir}:${PATH}"
   export GH_LOG="$gh_log"
   export GH_PWD_LOG="$gh_pwd_log"
+  export GIT_LOG="$git_log"
   export EXPECTED_REPO_DIR="${HOME}/work-mac"
 
   source_generator
@@ -121,10 +151,22 @@ EOF
     ko "repo directory matches GitHub repo name" "missing ${repo_dir}"
   fi
 
+  if [[ -d "${repo_dir}/.git" ]]; then
+    ok "git init still creates a local repo"
+  else
+    ko "git init still creates a local repo" "missing ${repo_dir}/.git"
+  fi
+
   if [[ "$output" == *"unbound variable"* ]]; then
     ko "github push path avoids DRY_RUN crash" "saw unbound variable"
   else
     ok "github push path avoids DRY_RUN crash"
+  fi
+
+  if [[ "$output" == *"NOISY_GIT_INIT_STDOUT"* || "$output" == *"NOISY_GIT_INIT_STDERR"* || "$output" == *"NOISY_GIT_ADD_STDOUT"* || "$output" == *"NOISY_GIT_COMMIT_STDOUT"* ]]; then
+    ko "git setup stays quiet in terminal output" "saw suppressed git command output"
+  else
+    ok "git setup stays quiet in terminal output"
   fi
 
   if [[ -f "$gh_log" ]] && grep -q 'repo create work-mac --private --source=. --push' "$gh_log"; then
@@ -137,6 +179,12 @@ EOF
     ok "github create runs from the generated repo"
   else
     ko "github create runs from the generated repo" "gh repo create ran outside ${repo_dir}"
+  fi
+
+  if [[ "$output" == *"Your dotfiles repo has been generated and backed up to GitHub."* && "$output" == *"Local repo: ${repo_dir}"* && "$output" == *"GitHub: https://github.com/tester/work-mac"* && "$output" == *"dotfriend sync"* ]]; then
+    ok "final summary explains the repo location and sync command"
+  else
+    ko "final summary explains the repo location and sync command" "missing final completion details"
   fi
 
   if grep -q "${repo_dir}" "${repo_dir}/install.sh"; then
