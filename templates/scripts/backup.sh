@@ -69,6 +69,28 @@ has_brew() { command -v brew >/dev/null 2>&1; }
 has_npm()  { command -v npm >/dev/null 2>&1; }
 has_git()  { command -v git >/dev/null 2>&1; }
 
+agent_tools_file() {
+  local agents_file="${REPO_ROOT}/.dotfriend/agent-tools.json"
+  if [[ ! -f "$agents_file" ]]; then
+    agents_file="${SCRIPT_DIR}/../lib/agent-tools.json"
+  fi
+  printf '%s' "$agents_file"
+}
+
+selected_agent_ids() {
+  local selections_file="${REPO_ROOT}/.dotfriend/selections.json"
+  if [[ -f "$selections_file" ]] && command -v jq >/dev/null 2>&1; then
+    jq -r '.agents // [] | .[] | .id' "$selections_file" 2>/dev/null || true
+    return 0
+  fi
+
+  local agents_file
+  agents_file="$(agent_tools_file)"
+  if [[ -f "$agents_file" ]] && command -v jq >/dev/null 2>&1; then
+    jq -r '.agentic_tools[].id' "$agents_file" 2>/dev/null || true
+  fi
+}
+
 run_cmd() {
   if [[ "$DRY_RUN" == true ]]; then
     printf "${C_DIM}   would run: %s${C_RESET}\n" "$*"
@@ -250,16 +272,70 @@ sync_npm() {
 }
 
 # ─────────────────────────────────────────────────────────────
-# 4. Sync agent tool configs
+# 4. Sync editor extension manifests
+# ─────────────────────────────────────────────────────────────
+
+sync_editor_extensions() {
+  log_step "Syncing editor extension manifests"
+
+  local target_file tmpfile
+
+  if [[ -d "${REPO_ROOT}/vscode" ]]; then
+    if command -v code >/dev/null 2>&1; then
+      target_file="${REPO_ROOT}/vscode/extensions.txt"
+      tmpfile="$(mktemp)"
+      code --list-extensions 2>/dev/null | sort > "$tmpfile"
+
+      if [[ "$DRY_RUN" == true ]]; then
+        printf "${C_DIM}   would regenerate: %s${C_RESET}\n" "$target_file"
+        rm -f "$tmpfile"
+        CHANGES_MADE=true
+      elif [[ -f "$target_file" ]] && diff -q "$target_file" "$tmpfile" >/dev/null 2>&1; then
+        log_info "vscode/extensions.txt unchanged"
+        rm -f "$tmpfile"
+      else
+        mv "$tmpfile" "$target_file"
+        CHANGES_MADE=true
+        log_ok "vscode/extensions.txt updated"
+      fi
+    else
+      log_warn "VS Code CLI not found, skipping vscode/extensions.txt sync"
+    fi
+  fi
+
+  if [[ -d "${REPO_ROOT}/cursor" ]]; then
+    if command -v cursor >/dev/null 2>&1; then
+      target_file="${REPO_ROOT}/cursor/extensions.txt"
+      tmpfile="$(mktemp)"
+      cursor --list-extensions 2>/dev/null | sort > "$tmpfile"
+
+      if [[ "$DRY_RUN" == true ]]; then
+        printf "${C_DIM}   would regenerate: %s${C_RESET}\n" "$target_file"
+        rm -f "$tmpfile"
+        CHANGES_MADE=true
+      elif [[ -f "$target_file" ]] && diff -q "$target_file" "$tmpfile" >/dev/null 2>&1; then
+        log_info "cursor/extensions.txt unchanged"
+        rm -f "$tmpfile"
+      else
+        mv "$tmpfile" "$target_file"
+        CHANGES_MADE=true
+        log_ok "cursor/extensions.txt updated"
+      fi
+    else
+      log_warn "Cursor CLI not found, skipping cursor/extensions.txt sync"
+    fi
+  fi
+}
+
+# ─────────────────────────────────────────────────────────────
+# 5. Sync agent tool configs
 # ─────────────────────────────────────────────────────────────
 
 sync_agents() {
   log_step "Syncing agent tool configs"
 
-  local agents_file="${REPO_ROOT}/.dotfriend/agent-tools.json"
-  if [[ ! -f "$agents_file" ]]; then
-    agents_file="${SCRIPT_DIR}/../lib/agent-tools.json"
-  fi
+  local agents_file
+  agents_file="$(agent_tools_file)"
 
   if [[ ! -f "$agents_file" ]]; then
     log_warn "agent-tools.json not found"
@@ -313,11 +389,11 @@ sync_agents() {
     done < <(jq -r --arg id "$id" '.agentic_tools[] | select(.id == $id) | .important_dirs[]?' "$agents_file" 2>/dev/null || true)
 
     log_ok "Synced agent: $id"
-  done < <(jq -r '.agentic_tools[].id' "$agents_file" 2>/dev/null || true)
+  done < <(selected_agent_ids)
 }
 
 # ─────────────────────────────────────────────────────────────
-# 5. Sync dotfiles at repo root
+# 6. Sync dotfiles at repo root
 # ─────────────────────────────────────────────────────────────
 
 sync_dotfiles() {
@@ -421,6 +497,7 @@ fi
 sync_configs
 sync_brewfile
 sync_npm
+sync_editor_extensions
 sync_agents
 sync_dotfiles
 show_diff

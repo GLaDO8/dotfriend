@@ -457,6 +457,81 @@ sync_npm() {
 }
 
 # ─────────────────────────────────────────────────────────────
+# Editor extension sync
+# ─────────────────────────────────────────────────────────────
+
+sync_editor_extensions() {
+  log_step "Editor Extension Sync"
+
+  local synced_any=false
+  local target_file tmpfile
+
+  if [[ -d "${REPO_DIR}/vscode" ]]; then
+    synced_any=true
+    if command -v code >/dev/null 2>&1; then
+      target_file="${REPO_DIR}/vscode/extensions.txt"
+      tmpfile="$(mktemp)"
+      code --list-extensions 2>/dev/null | sort > "$tmpfile"
+
+      if [[ "$DRY_RUN" == true ]]; then
+        if [[ ! -f "$target_file" ]] || ! diff -q "$target_file" "$tmpfile" >/dev/null 2>&1; then
+          gum_style --foreground "#F1FA8C" "  [dry-run] Would update vscode/extensions.txt"
+        else
+          log_ok "VS Code extensions are up to date."
+        fi
+      else
+        ensure_dir "$(dirname "$target_file")"
+        if [[ ! -f "$target_file" ]] || ! diff -q "$target_file" "$tmpfile" >/dev/null 2>&1; then
+          mv "$tmpfile" "$target_file"
+          tmpfile=""
+          log_ok "Updated vscode/extensions.txt"
+        else
+          log_ok "VS Code extensions are up to date."
+        fi
+      fi
+
+      [[ -n "${tmpfile:-}" ]] && rm -f "$tmpfile"
+    else
+      log_warn "VS Code CLI not found. Skipping vscode/extensions.txt sync."
+    fi
+  fi
+
+  if [[ -d "${REPO_DIR}/cursor" ]]; then
+    synced_any=true
+    if command -v cursor >/dev/null 2>&1; then
+      target_file="${REPO_DIR}/cursor/extensions.txt"
+      tmpfile="$(mktemp)"
+      cursor --list-extensions 2>/dev/null | sort > "$tmpfile"
+
+      if [[ "$DRY_RUN" == true ]]; then
+        if [[ ! -f "$target_file" ]] || ! diff -q "$target_file" "$tmpfile" >/dev/null 2>&1; then
+          gum_style --foreground "#F1FA8C" "  [dry-run] Would update cursor/extensions.txt"
+        else
+          log_ok "Cursor extensions are up to date."
+        fi
+      else
+        ensure_dir "$(dirname "$target_file")"
+        if [[ ! -f "$target_file" ]] || ! diff -q "$target_file" "$tmpfile" >/dev/null 2>&1; then
+          mv "$tmpfile" "$target_file"
+          tmpfile=""
+          log_ok "Updated cursor/extensions.txt"
+        else
+          log_ok "Cursor extensions are up to date."
+        fi
+      fi
+
+      [[ -n "${tmpfile:-}" ]] && rm -f "$tmpfile"
+    else
+      log_warn "Cursor CLI not found. Skipping cursor/extensions.txt sync."
+    fi
+  fi
+
+  if [[ "$synced_any" == false ]]; then
+    log_info "No editor extension manifests tracked in repo. Skipping editor extension sync."
+  fi
+}
+
+# ─────────────────────────────────────────────────────────────
 # Agent sync
 # ─────────────────────────────────────────────────────────────
 
@@ -712,13 +787,16 @@ cmd_sync() {
   # 4. npm sync
   sync_npm
 
-  # 5. Agent sync
+  # 5. Editor extension sync
+  sync_editor_extensions
+
+  # 6. Agent sync
   sync_agents
 
-  # 6. Show diff summary
+  # 7. Show diff summary
   show_diff_summary
 
-  # 7. Optional commit
+  # 8. Optional commit
   prompt_commit
 
   log_ok "Sync complete."

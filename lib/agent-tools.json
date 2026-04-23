@@ -23,7 +23,7 @@
       "id": "cursor",
       "config_dirs": ["~/.cursor"],
       "important_files": ["settings.json", "mcp.json", "keybindings.json"],
-      "important_dirs": ["extensions", "rules"],
+      "important_dirs": ["rules"],
       "canonical_dir": "~/.cursor",
       "symlinks_to_skip": []
     },

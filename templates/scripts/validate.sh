@@ -309,6 +309,7 @@ run_check_agents() {
     return
   fi
 
+  local selected_agents="${REPO_ROOT}/.dotfriend/selections.json"
   local tool canonical has_any=false
   while IFS= read -r tool; do
     [[ -z "$tool" ]] && continue
@@ -320,7 +321,13 @@ run_check_agents() {
       # Check alternative paths from JSON if available
       record "agent: $tool" "warn" "Config directory not found"
     fi
-  done < <(jq -r '.agentic_tools[].id' "$agents_file" 2>/dev/null || true)
+  done < <(
+    if [[ -f "$selected_agents" ]]; then
+      jq -r '.agents // [] | .[] | .id' "$selected_agents" 2>/dev/null || true
+    else
+      jq -r '.agentic_tools[].id' "$agents_file" 2>/dev/null || true
+    fi
+  )
 
   if [[ "$has_any" == false ]]; then
     record "agent tools" "warn" "No agent tool configs detected"

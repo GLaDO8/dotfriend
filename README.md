@@ -60,7 +60,7 @@ Only config files are backed up — never chat history, cache, or logs.
 |------|---------------------|
 | **Claude Code** | `CLAUDE.md`, `settings.json`, `hooks/`, `rules/`, `plugins/` |
 | **OpenAI Codex** | `AGENTS.md`, `RTK.md`, `CLAUDE.md`, `skills/`, `agent-docs/` |
-| **Cursor** | `settings.json`, `mcp.json`, `keybindings.json`, `extensions/`, `rules/` |
+| **Cursor** | `settings.json`, `mcp.json`, `keybindings.json`, `extensions.txt`, `rules/` |
 | **Aider** | `.aider.conf.yml`, `.aider.model.settings.yml`, `.aiderignore` |
 | **Continue.dev** | `config.json`, `config.ts`, `.prompts/` |
 | **GitHub Copilot CLI** | `~/.config/github-copilot/` |

@@ -292,10 +292,98 @@ test_filtered_recursive_copy_and_layout() {
   fi
 }
 
+test_cursor_extension_manifest_and_metadata() {
+  setup_case "cursor_manifest"
+  cat > "${DOTFRIEND_CACHE_DIR}/selections.json" <<'EOF'
+{
+  "apps": [],
+  "agents": [{"id":"cursor","name":"Cursor"}],
+  "formulae": [],
+  "taps": [],
+  "npm_globals": [],
+  "dotfiles": [".zshrc"],
+  "config_dirs": [],
+  "editors": {"vscode": false, "cursor": true},
+  "dock": {"backup": false, "defaults": false},
+  "xcode": false,
+  "telemetry": false,
+  "github": {"repo_name": "cursor-repo", "private": true}
+}
+EOF
+  printf '# test zshrc\n' > "${HOME}/.zshrc"
+
+  mkdir -p "${HOME}/.cursor/rules" "${HOME}/Library/Application Support/Cursor/User"
+  printf '{"chat":"enabled"}\n' > "${HOME}/.cursor/mcp.json"
+  printf '{"agent":true}\n' > "${HOME}/.cursor/settings.json"
+  printf '{"kb":"agent"}\n' > "${HOME}/.cursor/keybindings.json"
+  printf 'rule\n' > "${HOME}/.cursor/rules/base.md"
+  mkdir -p "${HOME}/.cursor/extensions/ms-python.python-2025.6.1-darwin-arm64"
+  printf 'vendored\n' > "${HOME}/.cursor/extensions/ms-python.python-2025.6.1-darwin-arm64/METADATA"
+  printf '{"editor":true}\n' > "${HOME}/Library/Application Support/Cursor/User/settings.json"
+  printf '{"editorKb":true}\n' > "${HOME}/Library/Application Support/Cursor/User/keybindings.json"
+
+  local bin_dir="${TEST_DIR}/cursor_manifest/bin"
+  mkdir -p "$bin_dir"
+  cat > "${bin_dir}/cursor" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "--list-extensions" ]]; then
+  printf 'ms-python.python\n'
+  printf 'anysphere.cursorpyright\n'
+  exit 0
+fi
+printf 'unexpected cursor args: %s\n' "$*" >&2
+exit 1
+EOF
+  chmod +x "${bin_dir}/cursor"
+  PATH="${bin_dir}:${PATH}"
+
+  source_generator
+
+  local repo_dir="${TEST_DIR}/cursor_manifest/out"
+  if generate_repo "$repo_dir" false >/dev/null 2>&1; then
+    ok "cursor repo generation succeeds"
+  else
+    ko "cursor repo generation succeeds" "generate_repo failed"
+    return
+  fi
+
+  if [[ -f "${repo_dir}/cursor/extensions.txt" ]]; then
+    ok "cursor extension manifest is generated"
+  else
+    ko "cursor extension manifest is generated" "missing cursor/extensions.txt"
+  fi
+
+  if [[ -e "${repo_dir}/cursor/extensions/ms-python.python-2025.6.1-darwin-arm64/METADATA" ]]; then
+    ko "cursor vendored extension files stay out of repo" "vendored extension payload was copied"
+  else
+    ok "cursor vendored extension files stay out of repo"
+  fi
+
+  if grep -q 'cursor --install-extension "\$ext"' "${repo_dir}/install.sh"; then
+    ok "install.sh restores cursor extensions from extension IDs"
+  else
+    ko "install.sh restores cursor extensions from extension IDs" "missing cursor install loop"
+  fi
+
+  if grep -q '_rsync_agent "\$DOTFILES_DIR/cursor" "\$HOME/.cursor"' "${repo_dir}/install.sh"; then
+    ko "install.sh avoids full cursor root rsync" "cursor root rsync still present"
+  else
+    ok "install.sh avoids full cursor root rsync"
+  fi
+
+  if [[ -f "${repo_dir}/README.md" && -f "${repo_dir}/.dotfriend/agent-tools.json" && -f "${repo_dir}/.dotfriend/selections.json" ]]; then
+    ok "generated repo includes readme and metadata"
+  else
+    ko "generated repo includes readme and metadata" "missing README.md or .dotfriend metadata"
+  fi
+}
+
 printf '\n1. Generation regressions\n'
 test_repo_name_and_github_push
 test_agent_and_shared_config_copy
 test_filtered_recursive_copy_and_layout
+test_cursor_extension_manifest_and_metadata
 
 printf '\n========================================\n'
 printf 'Results: %d passed, %d failed\n' "$PASS" "$FAIL"
