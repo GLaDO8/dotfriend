@@ -145,6 +145,78 @@ dotfriend/
 - Run `shellcheck` on rendered output (not templates with `{{PLACEHOLDERS}}`).
 - Test the gum-fallback path by setting `GUM_AVAILABLE=false` before sourcing `gum.sh`.
 
+### TUI Testing with `agent-tui`
+
+Use [`agent-tui`](https://github.com/pproenca/agent-tui) to programmatically drive and inspect the Gum-based wizard in a real PTY session. This is the preferred way to verify interactive flows (choosing apps, toggling options, navigating menus) without manual clicking.
+
+**Install:** `cargo install agent-tui` (requires Rust toolchain) or download a release binary.
+
+**Typical workflow:**
+
+```bash
+# 1. Start dotfriend in a virtual terminal
+agent-tui run "./dotfriend start" --cols 120 --rows 40
+
+# 2. Inspect the current screen
+agent-tui screenshot --strip-ansi
+
+# 3. Interact with the TUI
+agent-tui press ArrowDown ArrowDown Space   # navigate + toggle
+agent-tui press Enter                        # confirm
+agent-tui type "my-repo"                     # text input
+
+# 4. Wait for a state change
+agent-tui wait "Select formulae" --assert -t 10000
+
+# 5. Clean up
+agent-tui kill --yes
+```
+
+**Key commands for dotfriend:**
+
+| Command | Purpose |
+|---------|---------|
+| `run` | Launch `./dotfriend start` or `./dotfriend sync` in a PTY. Always specify `--cols` and `--rows`. |
+| `screenshot` | Capture terminal buffer. Use `--strip-ansi` for clean assertions. |
+| `press` | Send keys (`Enter`, `Space`, `ArrowDown`, `Ctrl+C`, etc.). |
+| `type` | Type literal text into inputs (e.g., repo name, paths). |
+| `wait` | Block until text appears, disappears (`--gone`), or the screen stabilizes (`--stable`). Use `--assert` to fail on timeout. |
+| `kill` | Terminate the session. Always use `--yes` in scripts. |
+
+**Full CLI reference:** https://raw.githubusercontent.com/pproenca/agent-tui/refs/heads/master/docs/cli/agent-tui.md
+
+**Example: smoke-test the first two wizard steps**
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+agent-tui run "./dotfriend start" --cols 120 --rows 40
+
+# Wait for welcome screen
+agent-tui wait "Welcome to dotfriend" --assert -t 15000
+
+# Press Enter to continue past welcome
+agent-tui press Enter
+
+# Wait for app selection step
+agent-tui wait "Select applications" --assert -t 15000
+
+# Select first app, then confirm
+agent-tui press Space Enter
+
+# Assert we landed on the next step
+agent-tui wait "Select formulae" --assert -t 10000
+
+agent-tui kill --yes
+echo "Smoke test passed"
+```
+
+Tips:
+- Use `--json` on any command for machine-readable output (e.g., `agent-tui --json screenshot`).
+- Use `--no-input` flag to prevent interactive prompts from hanging automation.
+- Keep a `cleanup` trap: `trap 'agent-tui kill --yes' EXIT` so failed assertions don't leave orphaned sessions.
+
 ---
 
 ## Quick Reference: Files to Edit for Common Tasks

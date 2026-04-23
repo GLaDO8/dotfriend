@@ -18,160 +18,14 @@ LIB_DIR="${SCRIPT_DIR}/lib"
 # shellcheck source=lib/common.sh
 source "${LIB_DIR}/common.sh"
 
-# shellcheck source=lib/gum.sh
-source "${LIB_DIR}/gum.sh"
+# shellcheck source=lib/bootstrap.sh
+source "${LIB_DIR}/bootstrap.sh"
 
 # ─────────────────────────────────────────────────────────────
 # Ensure cache directory exists
 # ─────────────────────────────────────────────────────────────
 
 ensure_dir "${DOTFRIEND_CACHE_DIR}"
-
-# ─────────────────────────────────────────────────────────────
-# Homebrew is required. Install it if missing.
-# ─────────────────────────────────────────────────────────────
-
-require_brew() {
-  if command -v brew >/dev/null 2>&1; then
-    return 0
-  fi
-
-  log_warn "Homebrew is required but not installed."
-  log_info "Installing Homebrew..."
-
-  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-  # Add brew to PATH for this session
-  if [[ -d /opt/homebrew/bin ]]; then
-    eval "$(/opt/homebrew/bin/brew shellenv)"
-  elif [[ -d /usr/local/bin ]]; then
-    eval "$(/usr/local/bin/brew shellenv)"
-  elif [[ -x "$HOME/homebrew/bin/brew" ]]; then
-    eval "$("$HOME/homebrew/bin/brew" shellenv)"
-  fi
-
-  if command -v brew >/dev/null 2>&1; then
-    log_ok "Homebrew installed successfully."
-    return 0
-  fi
-
-  log_error "Failed to install Homebrew automatically."
-  printf "\n  Please install Homebrew manually:\n" >&2
-  printf "    /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"\n" >&2
-  exit 1
-}
-
-require_brew
-
-# ─────────────────────────────────────────────────────────────
-# Gum is required. Install it if missing.
-# ─────────────────────────────────────────────────────────────
-
-require_gum() {
-  if command -v gum >/dev/null 2>&1; then
-    GUM_AVAILABLE=true
-    return 0
-  fi
-
-  log_warn "Gum is required but not installed."
-  log_info "Installing Gum via Homebrew..."
-  brew install gum
-
-  if command -v gum >/dev/null 2>&1; then
-    GUM_AVAILABLE=true
-    log_ok "Gum installed successfully."
-    return 0
-  fi
-
-  log_error "Failed to install Gum via Homebrew."
-  printf "\n  Or download a binary from: https://github.com/charmbracelet/gum/releases\n" >&2
-  exit 1
-}
-
-require_gum
-
-# ─────────────────────────────────────────────────────────────
-# Dependency check (other tools)
-# ─────────────────────────────────────────────────────────────
-
-check_dependencies() {
-  local -a required=("git" "brew" "jq")
-  local -a optional=("gh" "npm" "mas")
-  local -a missing_required=()
-  local -a missing_optional=()
-  local dep
-
-  for dep in "${required[@]}"; do
-    if ! command -v "$dep" >/dev/null 2>&1; then
-      missing_required+=("$dep")
-    fi
-  done
-
-  for dep in "${optional[@]}"; do
-    if ! command -v "$dep" >/dev/null 2>&1; then
-      missing_optional+=("$dep")
-    fi
-  done
-
-  if ! xcode-select -p >/dev/null 2>&1; then
-    missing_required+=("xcode-select")
-  fi
-
-  if [[ ${#missing_required[@]} -eq 0 && ${#missing_optional[@]} -eq 0 ]]; then
-    return 0
-  fi
-
-  log_warn "Some dependencies are missing."
-
-  local msg=""
-  msg+="\n"
-  msg+="  Dependency           Status\n"
-  msg+="  ----------           ------\n"
-
-  for dep in "${missing_required[@]}"; do
-    msg+="  ${dep}"
-    # pad to 20 chars
-    while [[ ${#dep} -lt 20 ]]; do
-      msg+=" "
-      dep="${dep} "
-    done
-    msg+="${C_RED}required, missing${C_RESET}\n"
-  done
-
-  for dep in "${missing_optional[@]}"; do
-    msg+="  ${dep}"
-    while [[ ${#dep} -lt 20 ]]; do
-      msg+=" "
-      dep="${dep} "
-    done
-    msg+="${C_YELLOW}optional, missing${C_RESET}\n"
-  done
-
-  msg+="\n"
-  msg+="dotfriend will continue, but some features may be limited.\n"
-
-  printf '%b' "$msg" >&2
-
-  if ! gum_confirm --prompt "Continue anyway?"; then
-    log_info "Install missing dependencies and try again."
-    printf "\n  Quick fixes:\n" >&2
-    if ! command -v brew >/dev/null 2>&1; then
-      printf "    Homebrew:   /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"\n" >&2
-    fi
-    if ! command -v jq >/dev/null 2>&1 && command -v brew >/dev/null 2>&1; then
-      printf "    jq:         brew install jq\n" >&2
-    fi
-    if ! command -v gh >/dev/null 2>&1 && command -v brew >/dev/null 2>&1; then
-      printf "    gh:         brew install gh\n" >&2
-    fi
-    if ! xcode-select -p >/dev/null 2>&1; then
-      printf "    Xcode CLI:  xcode-select --install\n" >&2
-    fi
-    exit 0
-  fi
-}
-
-check_dependencies
 
 # ─────────────────────────────────────────────────────────────
 # Trap Ctrl+C for clean exit
@@ -228,8 +82,16 @@ if [[ $# -eq 0 ]]; then
   exit 0
 fi
 
+ORIGINAL_ARGS=("$@")
 cmd="${1:-}"
 shift || true
+
+if [[ "${cmd}" == "start" || "${cmd}" == "sync" ]]; then
+  if [[ "${DOTFRIEND_RUNTIME_BOOTSTRAPPED:-false}" != "true" ]]; then
+    bootstrap_runtime
+    exec env DOTFRIEND_RUNTIME_BOOTSTRAPPED=true "$0" "${ORIGINAL_ARGS[@]}"
+  fi
+fi
 
 case "${cmd}" in
   start)

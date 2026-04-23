@@ -31,10 +31,13 @@ printf "\n2. CLI basics\n"
 if ./dotfriend --help >/dev/null 2>&1; then ok "--help"; else ko "--help" "failed"; fi
 if ./dotfriend --version | grep -q "0.2.0"; then ok "--version"; else ko "--version" "wrong output"; fi
 if ! ./dotfriend badcmd >/dev/null 2>&1; then ok "unknown command exits non-zero"; else ko "unknown command" "should fail"; fi
+if grep -q 'source "${LIB_DIR}/bootstrap.sh"' dotfriend; then ok "bootstrap module sourced"; else ko "bootstrap module" "missing"; fi
+if grep -q 'DOTFRIEND_RUNTIME_BOOTSTRAPPED=true' dotfriend; then ok "entrypoint re-execs after bootstrap"; else ko "bootstrap re-exec" "missing"; fi
 
 # ── 3. Entry script local bug ──
 printf "\n3. Entry script fix\n"
 if ! grep -q 'local dry_run=false' dotfriend; then ok "no local dry_run in dotfriend"; else ko "local dry_run" "still present"; fi
+if ! grep -q 'dotfriend will continue, but some features may be limited' dotfriend; then ok "no partial dependency mode"; else ko "partial dependency mode" "still present"; fi
 
 # ── 4. Discovery EXIT trap ──
 printf "\n4. Discovery EXIT trap fix\n"

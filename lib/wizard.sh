@@ -47,12 +47,15 @@ GITHUB_PRIVATE=true
 # Helpers
 # ─────────────────────────────────────────────────────────────
 
-_require_jq() {
-  if ! command -v jq >/dev/null 2>&1; then
-    log_warn "jq is required for this step. Install with: brew install jq"
-    return 1
-  fi
-  return 0
+_require_wizard_runtime() {
+  local cmd
+
+  for cmd in jq gum gh mas npm; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+      log_error "dotfriend bootstrap should have installed '$cmd', but it is still missing."
+      exit 1
+    fi
+  done
 }
 
 _write_selections_json() {
@@ -136,7 +139,7 @@ _write_selections_json() {
   # config_dirs (include all discovered)
   json+='"config_dirs":['
   first=true
-  if [[ -f "$DISCOVERY_CACHE" ]] && command -v jq >/dev/null 2>&1; then
+  if [[ -f "$DISCOVERY_CACHE" ]]; then
     while IFS= read -r cfg; do
       [[ -z "$cfg" ]] && continue
       [[ "$first" == true ]] || json+=","
@@ -214,11 +217,6 @@ _step0_welcome_and_discovery() {
 
 _step1_apps() {
   log_step "Step 1: macOS Apps"
-
-  if ! _require_jq; then
-    log_info "Skipping app selection (jq not available)."
-    return 0
-  fi
 
   if [[ ! -f "$DISCOVERY_CACHE" ]]; then
     log_info "No discovery cache found. Skipping app selection."
@@ -315,11 +313,6 @@ _step2_agents() {
   gum_style --foreground 240 \
     "Backup all skill files, hooks, plugins and settings"
 
-  if ! _require_jq; then
-    log_info "Skipping agentic tool selection (jq not available)."
-    return 0
-  fi
-
   if [[ ! -f "$DISCOVERY_CACHE" ]]; then
     log_info "No discovery cache found. Skipping agentic tools."
     return 0
@@ -375,11 +368,6 @@ _step2_agents() {
 _step3_formulae() {
   log_step "Step 3: Brew Formulae"
 
-  if ! _require_jq; then
-    log_info "Skipping formulae selection (jq not available)."
-    return 0
-  fi
-
   if [[ ! -f "$DISCOVERY_CACHE" ]]; then
     log_info "No discovery cache found. Skipping formulae."
     return 0
@@ -432,11 +420,6 @@ _step3_formulae() {
 _step4_taps() {
   log_step "Step 4: Homebrew Taps"
 
-  if ! _require_jq; then
-    log_info "Skipping tap selection (jq not available)."
-    return 0
-  fi
-
   if [[ ! -f "$DISCOVERY_CACHE" ]]; then
     log_info "No discovery cache found. Skipping taps."
     return 0
@@ -478,11 +461,6 @@ _step4_taps() {
 _step5_npm() {
   log_step "Step 5: npm Global Packages"
 
-  if ! _require_jq; then
-    log_info "Skipping npm selection (jq not available)."
-    return 0
-  fi
-
   if [[ ! -f "$DISCOVERY_CACHE" ]]; then
     log_info "No discovery cache found. Skipping npm packages."
     return 0
@@ -523,11 +501,6 @@ _step5_npm() {
 
 _step6_dotfiles() {
   log_step "Step 6: Dotfiles"
-
-  if ! _require_jq; then
-    log_info "Skipping dotfile selection (jq not available)."
-    return 0
-  fi
 
   if [[ ! -f "$DISCOVERY_CACHE" ]]; then
     log_info "No discovery cache found. Skipping dotfiles."
@@ -589,7 +562,7 @@ _step7_editors() {
   local has_vscode=false
   local has_cursor=false
 
-  if [[ -f "$DISCOVERY_CACHE" ]] && command -v jq >/dev/null 2>&1; then
+  if [[ -f "$DISCOVERY_CACHE" ]]; then
     local vscode_str cursor_str
     vscode_str="$(jq -r '.vscode // empty' "$DISCOVERY_CACHE" 2>/dev/null || true)"
     cursor_str="$(jq -r '.cursor // empty' "$DISCOVERY_CACHE" 2>/dev/null || true)"
@@ -737,7 +710,8 @@ _step12_github() {
 
 wizard_start() {
   ensure_dir "$DOTFRIEND_CACHE_DIR"
-  gum_ensure || true
+  _require_wizard_runtime
+  gum_ensure
 
   # Reset selections for idempotency
   SELECTED_APPS=()
