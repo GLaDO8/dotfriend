@@ -29,11 +29,8 @@ fi
 # Selected items still use the default pink (212) via --selected.foreground.
 export GUM_CHOOSE_CURSOR_FOREGROUND=""
 
-# dotfriend owns the multi-select help copy so it can use repo-specific wording.
-export GUM_CHOOSE_SHOW_HELP="false"
-
-# Shared help text for multi-select wizard prompts.
-GUM_CHOOSE_MULTISELECT_HELP="space toggle • ←↓↑→ navigate • enter submit • ctrl+a select all"
+# Show Gum's built-in footer for multi-select lists.
+export GUM_CHOOSE_SHOW_HELP="true"
 
 # Auto-install gum via Homebrew. Called by the entry script before
 # anything else runs. Hard-exits if installation fails.
@@ -137,21 +134,16 @@ gum_confirm() {
 
 gum_choose() {
   if [[ "$GUM_AVAILABLE" == true ]]; then
-    local args=() items=() header="" no_limit=false
+    local args=() items=() header=""
     while [[ $# -gt 0 ]]; do
       case "$1" in
         --no-limit)
-          no_limit=true
           args+=("$1")
           shift
           ;;
         --header)
           header="$2"
           shift 2
-          ;;
-        --show-help|--no-show-help)
-          # The wrapper owns the help text so callers get consistent wording.
-          shift
           ;;
         --*=*)
           args+=("$1")
@@ -173,38 +165,22 @@ gum_choose() {
       esac
     done
 
-    if [[ "$no_limit" == true ]]; then
-      args+=(--no-show-help)
-      if [[ -n "$header" ]]; then
-        header+=$'\n'"${GUM_CHOOSE_MULTISELECT_HELP}"
-      else
-        header="${GUM_CHOOSE_MULTISELECT_HELP}"
-      fi
-    fi
-
     if [[ -n "$header" ]]; then
       args+=(--header "$header")
     fi
 
     gum choose "${args[@]}" "${items[@]}"
   else
-    local items=() selected=() no_limit=false header=""
+    local items=() selected=() header=""
     while [[ $# -gt 0 ]]; do
       case "$1" in
-        --no-limit) no_limit=true; shift ;;
+        --no-limit) shift ;;
         --selected) selected+=("$2"); shift 2 ;;
         --header) header="$2"; shift 2 ;;
         --*) shift ;;
         *) items+=("$1"); shift ;;
       esac
     done
-    if [[ "$no_limit" == true ]]; then
-      if [[ -n "$header" ]]; then
-        header+=$'\n'"${GUM_CHOOSE_MULTISELECT_HELP}"
-      else
-        header="${GUM_CHOOSE_MULTISELECT_HELP}"
-      fi
-    fi
     [[ -n "$header" ]] && printf '%s\n' "$header" >&2
     local i=1 opt
     for opt in "${items[@]}"; do

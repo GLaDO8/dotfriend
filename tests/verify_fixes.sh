@@ -64,8 +64,8 @@ if grep -q 'npm list -g --depth=0 --json' lib/sync.sh; then ok "npm JSON parsing
 printf "\n7. gum.sh fixes\n"
 if grep -q 'gum confirm "\$prompt_text" "\${args\[@\]}"' lib/gum.sh; then ok "gum_confirm translates --prompt correctly"; else ko "gum_confirm" "not fixed"; fi
 if grep -q 'shift 2' lib/gum.sh; then ok "gum_spin consumes args"; else ko "gum_spin" "not fixed"; fi
-if grep -q 'GUM_CHOOSE_MULTISELECT_HELP="space toggle' lib/gum.sh; then ok "gum_choose uses space toggle copy"; else ko "gum choose help" "missing custom help text"; fi
-if grep -q 'GUM_CHOOSE_SHOW_HELP="false"' lib/gum.sh; then ok "gum choose built-in footer disabled"; else ko "gum choose footer" "still using built-in footer"; fi
+if grep -q 'GUM_CHOOSE_SHOW_HELP="true"' lib/gum.sh; then ok "gum choose built-in footer enabled"; else ko "gum choose footer" "built-in footer is disabled"; fi
+if ! grep -q 'GUM_CHOOSE_MULTISELECT_HELP=' lib/gum.sh; then ok "gum choose no longer pushes help into header"; else ko "gum choose header help" "custom header help still present"; fi
 
 # ── 8. Wizard output stays quiet ──
 printf "\n8. Wizard output stays quiet\n"
