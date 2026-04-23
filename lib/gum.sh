@@ -217,7 +217,8 @@ gum_spin() {
     local cmd=()
     while [[ $# -gt 0 ]]; do
       case "$1" in
-        --spinner|--title|--show-output) shift 2 ;;  # consume flag + argument
+        --spinner|--title|--timeout|--align) shift 2 ;;  # consume flag + argument
+        --show-output|--show-error|--show-stdout|--show-stderr) shift ;;
         --) shift; break ;;
         *) cmd+=("$1"); shift ;;
       esac

@@ -961,18 +961,32 @@ _github_push() {
     return 0
   fi
 
-  log_info "Creating private GitHub repo: ${username}/${repo_name}"
+  local create_title="Creating private GitHub repo: ${username}/${repo_name}"
   local gh_create_log
   gh_create_log="$(mktemp)"
-  if ! (
-    cd "$GEN_DIR"
-    gh repo create "$repo_name" --private --source=. --push
-  ) >"$gh_create_log" 2>&1; then
-    GEN_GITHUB_STATUS_MESSAGE="The local repo was generated, but dotfriend could not create ${GEN_GITHUB_URL}."
-    log_warn "GitHub repo creation failed for ${username}/${repo_name}"
-    _print_command_failure_log "$gh_create_log"
-    rm -f "$gh_create_log"
-    return 1
+  if [[ "$GUM_AVAILABLE" == true ]]; then
+    if ! (
+      cd "$GEN_DIR"
+      gum_spin --title "$create_title" --show-error -- \
+        gh repo create "$repo_name" --private --source=. --push
+    ); then
+      GEN_GITHUB_STATUS_MESSAGE="The local repo was generated, but dotfriend could not create ${GEN_GITHUB_URL}."
+      log_warn "GitHub repo creation failed for ${username}/${repo_name}"
+      rm -f "$gh_create_log"
+      return 1
+    fi
+  else
+    log_info "$create_title"
+    if ! (
+      cd "$GEN_DIR"
+      gh repo create "$repo_name" --private --source=. --push
+    ) >"$gh_create_log" 2>&1; then
+      GEN_GITHUB_STATUS_MESSAGE="The local repo was generated, but dotfriend could not create ${GEN_GITHUB_URL}."
+      log_warn "GitHub repo creation failed for ${username}/${repo_name}"
+      _print_command_failure_log "$gh_create_log"
+      rm -f "$gh_create_log"
+      return 1
+    fi
   fi
 
   rm -f "$gh_create_log"
