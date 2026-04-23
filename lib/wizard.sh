@@ -266,7 +266,7 @@ _step1_apps() {
     return 0
   fi
 
-  local -a choose_args=(--no-limit --header "Select apps to back up (spacebar to toggle, enter to confirm):")
+  local -a choose_args=(--no-limit --header "Select apps to back up:")
   for d in "${displays[@]}"; do
     # Escape commas for gum choose --selected (pflag StringSlice splits on commas)
     choose_args+=(--selected "${d//,/\\,}")
@@ -338,7 +338,7 @@ _step2_agents() {
     return 0
   fi
 
-  local -a choose_args=(--no-limit --header "Select agentic tools to back up (spacebar to toggle, enter to confirm):")
+  local -a choose_args=(--no-limit --header "Select agentic tools to back up:")
   for d in "${displays[@]}"; do
     # Escape commas for gum choose --selected (pflag StringSlice splits on commas)
     choose_args+=(--selected "${d//,/\\,}")
@@ -387,7 +387,7 @@ _step3_formulae() {
     return 0
   fi
 
-  local -a choose_args=(--no-limit --header "Select formulae to include in your Brewfile (spacebar to toggle, enter to confirm):")
+  local -a choose_args=(--no-limit --header "Select formulae to include in your Brewfile:")
   for d in "${displays[@]}"; do
     # Workaround: gum choose --selected uses pflag StringSlice which splits on
     # commas, so values containing commas fail to match. Escape commas with
@@ -436,7 +436,7 @@ _step4_taps() {
     return 0
   fi
 
-  local -a choose_args=(--no-limit --header "Select Homebrew taps to track (spacebar to toggle, enter to confirm):")
+  local -a choose_args=(--no-limit --header "Select Homebrew taps to track:")
   for t in "${taps[@]}"; do
     # Escape commas for gum choose --selected (pflag StringSlice splits on commas)
     choose_args+=(--selected "${t//,/\\,}")
@@ -477,7 +477,7 @@ _step5_npm() {
     return 0
   fi
 
-  local -a choose_args=(--no-limit --header "Select npm global packages to track (spacebar to toggle, enter to confirm):")
+  local -a choose_args=(--no-limit --header "Select npm global packages to track:")
   for p in "${packages[@]}"; do
     # Escape commas for gum choose --selected (pflag StringSlice splits on commas)
     choose_args+=(--selected "${p//,/\\,}")
@@ -529,7 +529,7 @@ _step6_dotfiles() {
 
   log_warn "Security note: SSH private keys are never backed up. Only ~/.ssh/config is offered."
 
-  local -a choose_args=(--no-limit --header "Select dotfiles to track (spacebar to toggle, enter to confirm):")
+  local -a choose_args=(--no-limit --header "Select dotfiles to track:")
   for d in "${displays[@]}"; do
     # Escape commas for gum choose --selected (pflag StringSlice splits on commas)
     choose_args+=(--selected "${d//,/\\,}")
@@ -579,7 +579,7 @@ _step7_editors() {
     return 0
   fi
 
-  local -a choose_args=(--no-limit --header "Select editors to back up settings and extensions for (spacebar to toggle, enter to confirm):")
+  local -a choose_args=(--no-limit --header "Select editors to back up settings and extensions for:")
   for opt in "${editor_options[@]}"; do
     # Escape commas for gum choose --selected (pflag StringSlice splits on commas)
     choose_args+=(--selected "${opt//,/\\,}")

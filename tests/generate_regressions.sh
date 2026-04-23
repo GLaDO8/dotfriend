@@ -67,6 +67,7 @@ test_repo_name_and_github_push() {
 
   local bin_dir="${TEST_DIR}/repo_name/bin"
   local gh_log="${TEST_DIR}/repo_name/gh.log"
+  local gh_pwd_log="${TEST_DIR}/repo_name/gh-pwd.log"
   mkdir -p "$bin_dir"
 
   cat > "${bin_dir}/gh" <<'EOF'
@@ -85,6 +86,11 @@ case "$1 $2" in
     exit 1
     ;;
   "repo create")
+    printf '%s\n' "${PWD}" >> "${GH_PWD_LOG:?}"
+    if [[ "${PWD}" != "${EXPECTED_REPO_DIR:?}" ]]; then
+      printf 'gh repo create ran from %s, expected %s\n' "${PWD}" "${EXPECTED_REPO_DIR}" >&2
+      exit 1
+    fi
     exit 0
     ;;
 esac
@@ -94,6 +100,8 @@ EOF
 
   PATH="${bin_dir}:${PATH}"
   export GH_LOG="$gh_log"
+  export GH_PWD_LOG="$gh_pwd_log"
+  export EXPECTED_REPO_DIR="${HOME}/work-mac"
 
   source_generator
 
@@ -123,6 +131,12 @@ EOF
     ok "github create uses the selected repo name"
   else
     ko "github create uses the selected repo name" "gh repo create was not called correctly"
+  fi
+
+  if [[ -f "$gh_pwd_log" ]] && grep -qx "${repo_dir}" "$gh_pwd_log"; then
+    ok "github create runs from the generated repo"
+  else
+    ko "github create runs from the generated repo" "gh repo create ran outside ${repo_dir}"
   fi
 
   if grep -q "${repo_dir}" "${repo_dir}/install.sh"; then

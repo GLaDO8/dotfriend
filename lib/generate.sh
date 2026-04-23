@@ -824,15 +824,21 @@ _github_push() {
 
   if gh repo view "${username}/${repo_name}" >/dev/null 2>&1; then
     log_warn "GitHub repo already exists: ${username}/${repo_name}"
-    git remote add origin "https://github.com/${username}/${repo_name}.git" 2>/dev/null || true
-    git branch -M main 2>/dev/null || true
-    git push -u origin main 2>/dev/null || git push -u origin master 2>/dev/null || true
+    (
+      cd "$GEN_DIR"
+      git remote add origin "https://github.com/${username}/${repo_name}.git" 2>/dev/null || true
+      git branch -M main 2>/dev/null || true
+      git push -u origin main 2>/dev/null || git push -u origin master 2>/dev/null || true
+    )
     log_ok "Pushed to https://github.com/${username}/${repo_name}"
     return 0
   fi
 
   log_info "Creating private GitHub repo: ${username}/${repo_name}"
-  if ! gh repo create "$repo_name" --private --source=. --push; then
+  if ! (
+    cd "$GEN_DIR"
+    gh repo create "$repo_name" --private --source=. --push
+  ); then
     log_warn "GitHub repo creation failed for ${username}/${repo_name}"
     return 1
   fi
