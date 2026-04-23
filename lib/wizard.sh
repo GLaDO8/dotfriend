@@ -189,16 +189,16 @@ _step0_welcome_and_discovery() {
   gum_style --foreground 212 --border double --padding "1 2" --align center \
     "Welcome to dotfriend v${DOTFRIEND_VERSION}"
   gum_style --foreground 240 --align center \
-    "This wizard scans your Mac and builds a version-controlled dotfiles repo."
-  gum_style --foreground 240 --align center \
-    "You'll be able to review and customize everything before it's saved."
+    "Dotfriend helps you backup all your apps, configurations, agent settings (Codex, Claude Code etc.) and preferences, and install them on a new Mac with a single script."
 
-  if ! gum_confirm --prompt "Ready to discover your setup?"; then
+  if ! gum_confirm --prompt "Ready to customise your setup and backup settings?"; then
     log_info "Wizard cancelled. No changes were made."
     exit 0
   fi
 
   log_step "Step 0: Scanning your system..."
+  gum_style --foreground 240 \
+    "Dotfriend is finding Homebrew Cask IDs for all your apps (Homebrew Cask is a CLI workflow for installing macOS applications.)"
 
   log_info "Running discovery (this may take a moment)..."
   run_discovery
@@ -268,7 +268,7 @@ _step1_apps() {
     return 0
   fi
 
-  local -a choose_args=(--no-limit --no-show-help --header "Select apps to back up (spacebar to toggle, enter to confirm):")
+  local -a choose_args=(--no-limit --header "Select apps to back up (spacebar to toggle, enter to confirm):")
   for d in "${displays[@]}"; do
     # Escape commas for gum choose --selected (pflag StringSlice splits on commas)
     choose_args+=(--selected "${d//,/\\,}")
@@ -281,6 +281,7 @@ _step1_apps() {
   done < <(gum_choose "${choose_args[@]}")
 
   SELECTED_APPS=()
+  local -a skipped_apps=()
   for sel in "${selected_displays[@]}"; do
     for i in "${!displays[@]}"; do
       if [[ "${displays[$i]}" == "$sel" ]]; then
@@ -290,7 +291,7 @@ _step1_apps() {
 
         # Skip apps with no cask found — don't prompt for manual entry
         if [[ "$s_source" == "unknown" || -z "$s_cask" || "$s_source" == "manual" || "$s_source" == "appstore" ]]; then
-          log_info "Skipping $s_name (not restorable automatically)"
+          skipped_apps+=("$s_name")
           continue
         fi
 
@@ -299,6 +300,10 @@ _step1_apps() {
       fi
     done
   done
+
+  if [[ ${#skipped_apps[@]} -gt 0 ]]; then
+    log_info "Some apps are not restorable automatically, skipping them: ${skipped_apps[*]}"
+  fi
 }
 
 # ─────────────────────────────────────────────────────────────
@@ -307,6 +312,8 @@ _step1_apps() {
 
 _step2_agents() {
   log_step "Step 2: Agentic Tools"
+  gum_style --foreground 240 \
+    "Backup all skill files, hooks, plugins and settings"
 
   if ! _require_jq; then
     log_info "Skipping agentic tool selection (jq not available)."
@@ -322,13 +329,15 @@ _step2_agents() {
   local -a ids=()
   local -a anames=()
 
-  while IFS='|' read -r id aname path status; do
+  while IFS='|' read -r id aname path status skill_count; do
     [[ -z "$id" ]] && continue
     # Only show tools that were found on the system
     [[ "$status" == "found" ]] || continue
     ids+=("$id")
     anames+=("$aname")
-    displays+=("$aname")
+    local skill_label="skills"
+    [[ "$skill_count" -eq 1 ]] && skill_label="skill"
+    displays+=("$aname ($skill_count $skill_label)")
   done < <(jq -r '(.agents // "") | split("\n")[] | select(length > 0)' "$DISCOVERY_CACHE" 2>/dev/null || true)
 
   if [[ ${#displays[@]} -eq 0 ]]; then
@@ -336,7 +345,7 @@ _step2_agents() {
     return 0
   fi
 
-  local -a choose_args=(--no-limit --no-show-help --header "Select agentic tools to back up (spacebar to toggle, enter to confirm):")
+  local -a choose_args=(--no-limit --header "Select agentic tools to back up (spacebar to toggle, enter to confirm):")
   for d in "${displays[@]}"; do
     # Escape commas for gum choose --selected (pflag StringSlice splits on commas)
     choose_args+=(--selected "${d//,/\\,}")
@@ -390,7 +399,7 @@ _step3_formulae() {
     return 0
   fi
 
-  local -a choose_args=(--no-limit --no-show-help --header "Select formulae to include in your Brewfile (spacebar to toggle, enter to confirm):")
+  local -a choose_args=(--no-limit --header "Select formulae to include in your Brewfile (spacebar to toggle, enter to confirm):")
   for d in "${displays[@]}"; do
     # Workaround: gum choose --selected uses pflag StringSlice which splits on
     # commas, so values containing commas fail to match. Escape commas with
@@ -444,7 +453,7 @@ _step4_taps() {
     return 0
   fi
 
-  local -a choose_args=(--no-limit --no-show-help --header "Select Homebrew taps to track (spacebar to toggle, enter to confirm):")
+  local -a choose_args=(--no-limit --header "Select Homebrew taps to track (spacebar to toggle, enter to confirm):")
   for t in "${taps[@]}"; do
     # Escape commas for gum choose --selected (pflag StringSlice splits on commas)
     choose_args+=(--selected "${t//,/\\,}")
@@ -490,7 +499,7 @@ _step5_npm() {
     return 0
   fi
 
-  local -a choose_args=(--no-limit --no-show-help --header "Select npm global packages to track (spacebar to toggle, enter to confirm):")
+  local -a choose_args=(--no-limit --header "Select npm global packages to track (spacebar to toggle, enter to confirm):")
   for p in "${packages[@]}"; do
     # Escape commas for gum choose --selected (pflag StringSlice splits on commas)
     choose_args+=(--selected "${p//,/\\,}")
@@ -547,7 +556,7 @@ _step6_dotfiles() {
 
   log_warn "Security note: SSH private keys are never backed up. Only ~/.ssh/config is offered."
 
-  local -a choose_args=(--no-limit --no-show-help --header "Select dotfiles to track (spacebar to toggle, enter to confirm):")
+  local -a choose_args=(--no-limit --header "Select dotfiles to track (spacebar to toggle, enter to confirm):")
   for d in "${displays[@]}"; do
     # Escape commas for gum choose --selected (pflag StringSlice splits on commas)
     choose_args+=(--selected "${d//,/\\,}")
@@ -597,7 +606,7 @@ _step7_editors() {
     return 0
   fi
 
-  local -a choose_args=(--no-limit --no-show-help --header "Select editors to back up settings and extensions for (spacebar to toggle, enter to confirm):")
+  local -a choose_args=(--no-limit --header "Select editors to back up settings and extensions for (spacebar to toggle, enter to confirm):")
   for opt in "${editor_options[@]}"; do
     # Escape commas for gum choose --selected (pflag StringSlice splits on commas)
     choose_args+=(--selected "${opt//,/\\,}")

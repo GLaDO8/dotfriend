@@ -145,7 +145,24 @@ test_agent_and_shared_config_copy() {
 
   mkdir -p "${HOME}/.claude/hooks" "${HOME}/.codex" "${HOME}/.agents/skills/demo" "${HOME}/.agents/agent-docs"
   printf '# CLAUDE\n' > "${HOME}/.claude/CLAUDE.md"
-  printf '{"theme":"dark"}\n' > "${HOME}/.claude/settings.json"
+  cat > "${HOME}/.claude/settings.json" <<'EOF'
+{
+  "theme": "dark",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/lint-check.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
+EOF
   printf '#!/usr/bin/env bash\n' > "${HOME}/.claude/hooks/pre.sh"
   printf '# AGENTS\n' > "${HOME}/.codex/AGENTS.md"
   printf '# RTK\n' > "${HOME}/.codex/RTK.md"
@@ -168,6 +185,12 @@ test_agent_and_shared_config_copy() {
     ok "claude files are copied into the claude folder"
   else
     ko "claude files are copied into the claude folder" "expected Claude files missing"
+  fi
+
+  if ! grep -q '"hooks"' "${repo_dir}/claude/settings.json"; then
+    ok "copied claude settings disable active hooks"
+  else
+    ko "copied claude settings disable active hooks" "hooks remained active in generated repo"
   fi
 
   if [[ -f "${repo_dir}/codex/AGENTS.md" && -f "${repo_dir}/codex/RTK.md" ]]; then

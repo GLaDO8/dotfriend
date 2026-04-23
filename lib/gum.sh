@@ -29,9 +29,8 @@ fi
 # Selected items still use the default pink (212) via --selected.foreground.
 export GUM_CHOOSE_CURSOR_FOREGROUND=""
 
-# Hide the "x for toggle" footer in multi-select lists.
-# Callers should pass --no-show-help explicitly; this env var is a fallback.
-export GUM_CHOOSE_SHOW_HELP="false"
+# Show the footer in multi-select lists (keys and actions).
+export GUM_CHOOSE_SHOW_HELP="true"
 
 # Auto-install gum via Homebrew. Called by the entry script before
 # anything else runs. Hard-exits if installation fails.

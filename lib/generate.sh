@@ -105,6 +105,48 @@ _copy_tree_filtered() {
   find "$dest" -name '.gitignore' -type f -delete 2>/dev/null || true
 }
 
+_sanitize_agent_file_copy() {
+  local agent_id="$1" dest="$2"
+
+  if [[ "$agent_id" != "claude" || "$(basename "$dest")" != "settings.json" ]]; then
+    return 0
+  fi
+
+  if command -v jq >/dev/null 2>&1; then
+    local tmpfile
+    tmpfile="$(mktemp)"
+    if jq 'del(.hooks)' "$dest" > "$tmpfile" 2>/dev/null; then
+      mv "$tmpfile" "$dest"
+      log_info "Removed active Claude hooks from copied settings.json"
+      return 0
+    fi
+    rm -f "$tmpfile"
+  fi
+
+  if command -v python3 >/dev/null 2>&1; then
+    if python3 - "$dest" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, "r", encoding="utf-8") as f:
+    data = json.load(f)
+
+data.pop("hooks", None)
+
+with open(path, "w", encoding="utf-8") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+PY
+    then
+      log_info "Removed active Claude hooks from copied settings.json"
+      return 0
+    fi
+  fi
+
+  log_warn "Could not sanitize copied Claude settings.json; hooks remain active in backup"
+}
+
 # ─────────────────────────────────────────────────────────────
 # File generation helpers
 # ─────────────────────────────────────────────────────────────
@@ -652,6 +694,7 @@ _copy_agent_configs() {
       local src="${canonical_dir}/${f}"
       if [[ -e "$src" && ! -L "$src" ]]; then
         cp -a "$src" "${dest}/"
+        _sanitize_agent_file_copy "$agent_id" "${dest}/$(basename "$f")"
         log_ok "Copied ${f} for ${agent_id}"
       elif [[ -L "$src" ]]; then
         log_info "Skipping symlink: ${src}"

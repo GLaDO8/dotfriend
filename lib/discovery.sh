@@ -455,7 +455,7 @@ discover_npm_globals() {
 
 # Read lib/agent-tools.json and check whether each tool's config directory
 # exists under $HOME.
-# Output format: tool-id|Tool Name|config_dir|status
+# Output format: tool-id|Tool Name|config_dir|status|skill_count
 discover_agentic_tools() {
   local tools_file="${SCRIPT_DIR}/agent-tools.json"
   if [[ ! -f "$tools_file" ]]; then
@@ -476,7 +476,7 @@ discover_agentic_tools() {
 
   local raw=""
   if [[ "$parser" == "jq" ]]; then
-    raw="$(jq -r '.agentic_tools[] | "\(.id)|\(.name)|\(.canonical_dir)"' "$tools_file" 2>/dev/null || true)"
+    raw="$(jq -r '.agentic_tools[] | "\(.id)|\(.name)|\(.canonical_dir // .config_dirs[0])|\(.important_files // [] | join(","))|\(.important_dirs // [] | join(","))"' "$tools_file" 2>/dev/null || true)"
   else
     raw="$(python3 -c '
 import json, sys
@@ -486,25 +486,48 @@ tools = data.get("agentic_tools", [])
 for tool in tools:
     if not isinstance(tool, dict):
         continue
-    print("{}|{}|{}".format(
+    cfg = tool.get("canonical_dir", tool.get("config_dirs", [""])[0])
+    files = tool.get("important_files", [])
+    dirs = tool.get("important_dirs", [])
+    print("{}|{}|{}|{}|{}".format(
         tool.get("id", ""),
         tool.get("name", ""),
-        tool.get("canonical_dir", tool.get("config_dirs", [""])[0])
+        cfg,
+        ",".join(files),
+        ",".join(dirs)
     ))
 ' "$tools_file" 2>/dev/null || true)"
   fi
 
-  local tid name cfg status
-  while IFS='|' read -r tid name cfg; do
+  local tid name cfg files_str dirs_str status skill_count
+  while IFS='|' read -r tid name cfg files_str dirs_str; do
     [[ -n "$tid" ]] || continue
     # Expand leading ~ to $HOME (canonical_dir values are like ~/.claude)
     cfg="${cfg/#\~/$HOME}"
     if [[ -d "$cfg" ]]; then
       status="found"
+      skill_count=0
+      local f d
+      if [[ -n "$files_str" ]]; then
+        IFS=',' read -ra files <<< "$files_str"
+        for f in "${files[@]}"; do
+          [[ -n "$f" && -f "$cfg/$f" ]] && ((skill_count++)) || true
+        done
+      fi
+      if [[ -n "$dirs_str" ]]; then
+        IFS=',' read -ra dirs <<< "$dirs_str"
+        for d in "${dirs[@]}"; do
+          [[ -n "$d" && -d "$cfg/$d" ]] || continue
+          local dir_count
+          dir_count="$(find "$cfg/$d" -maxdepth 1 -mindepth 1 -not -type l 2>/dev/null | wc -l | tr -d ' ')"
+          skill_count=$((skill_count + dir_count))
+        done
+      fi
     else
       status="missing"
+      skill_count=0
     fi
-    printf '%s|%s|%s|%s\n' "$tid" "$name" "$cfg" "$status"
+    printf '%s|%s|%s|%s|%d\n' "$tid" "$name" "$cfg" "$status" "$skill_count"
   done <<< "$raw"
 }
 
