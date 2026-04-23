@@ -1,233 +1,81 @@
 # dotfriend
 
-A bash-based CLI that uses [Gum](https://github.com/charmbracelet/gum) to interactively scan a macOS system and generate a version-controlled `dotfiles` repository, complete with `Brewfile`, `install.sh`, `bootstrap.sh`, and config backups.
+Agent handoff for this repo. Keep this file focused on implementation guidance, not product docs. For user-facing overview, commands, and installation, see `README.md`.
 
----
+## High-Value Files
 
-## Tech Stack
+| File | Purpose |
+|------|---------|
+| `dotfriend` | Main CLI entrypoint. Bootstraps runtime deps for `start`/`sync`, then dispatches commands. |
+| `bin/dotfriend.js` | npm package wrapper that invokes `./dotfriend`. |
+| `lib/bootstrap.sh` | Ensures Xcode CLI tools, Homebrew, and runtime dependencies exist. |
+| `lib/wizard.sh` | Interactive `dotfriend start` flow. Writes selections to cache. |
+| `lib/discovery.sh` | Scans machine state and writes discovery cache. |
+| `lib/generate.sh` | Builds the output dotfiles repo from cached selections. |
+| `lib/sync.sh` | Syncs machine changes back into an existing generated repo. |
+| `lib/gum.sh` | Gum wrappers plus plain-bash fallbacks used in tests. |
+| `templates/install.sh` | Generated restore/install script. |
+| `templates/bootstrap.sh` | Generated first-run bootstrap script for new Macs. |
+| `templates/scripts/validate.sh` | Generated validation helper. |
+| `templates/scripts/backup.sh` | Generated reverse-sync helper. |
 
-- **Language:** Bash (no compilation, no package manager for the tool itself)
-- **TUI:** [Gum](https://github.com/charmbracelet/gum) CLI binary (**hard requirement** — the CLI auto-installs it via Homebrew if missing)
-- **JSON:** `jq` preferred; naive `grep`/`sed` fallbacks for fresh Macs
-- **Platform:** macOS only (Apple Silicon & Intel)
-
----
-
-## Project Structure
-
-```
-dotfriend/
-├── dotfriend              # Main entry point. Parses args, sources libs, runs wizard/sync.
-├── lib/
-│   ├── common.sh          # Colors, logging, JSON helpers, brew detection, prompt fallbacks
-│   ├── gum.sh             # Gum wrappers (hard requirement; fallbacks kept for testing only).
-│   ├── discovery.sh       # Scans apps, brew, npm, agentic tools, dotfiles, editors, dock.
-│   ├── wizard.sh          # 12-step interactive wizard (dotfriend start). Calls discovery.
-│   ├── generate.sh        # Creates the dotfiles repo from wizard selections.
-│   ├── sync.sh            # Incremental sync (dotfriend sync). Config, brew, npm, agent sync.
-│   ├── agent-tools.json   # Reference list of agentic tools and their config paths.
-│   └── cask-map.json      # App bundle name → Homebrew cask mappings.
-├── templates/
-│   ├── bootstrap.sh       # First-run script for brand-new Macs (installs brew, git, gh, gum).
-│   ├── install.sh         # Full restore script. Phased, dry-run, sudo keepalive, soft-fail.
-│   └── scripts/
-│       ├── validate.sh    # Post-install validation (--fix, --json).
-│       └── backup.sh      # Reverse-sync: copy machine state back to repo.
-├── tests/
-│   ├── harness.sh         # Test harness.
-│   └── verify_fixes.sh    # Regression tests for known bugs.
-├── PLAN.md                # Full product spec and v1 scope.
-└── TEST_REPORT.md         # Bug tracker with severity, location, and fix instructions.
-```
-
----
-
-## How the CLI Works
-
-### Entry Point (`dotfriend`)
-
-1. **Sources** `lib/common.sh` and `lib/gum.sh`.
-2. **Requires Gum:** Calls `require_gum()` — auto-installs via Homebrew if missing, otherwise exits with instructions.
-3. **Dependency check:** Scans for `git`, `brew`, `jq`, `gh`, `npm`, `mas`, and Xcode CLI tools. Warns but does not block on optional deps.
-4. **Dispatches** to:
-   - `dotfriend start` → sources `lib/wizard.sh` → runs `wizard_start()` → sources `lib/generate.sh` → runs `generate_repo()`.
-   - `dotfriend sync` → sources `lib/sync.sh` → runs `cmd_sync()`.
-
-### Wizard Flow (`lib/wizard.sh`)
-
-12 sequential steps. Each step:
-1. Reads from `~/.cache/dotfriend/discovery.json` (produced by `run_discovery()` in `lib/discovery.sh`).
-2. Presents options via `gum_choose --no-limit`.
-3. Stores selections in global arrays (`SELECTED_APPS`, `SELECTED_FORMULAE`, etc.).
-4. At the end, writes everything to `~/.cache/dotfriend/selections.json` via `_write_selections_json()`.
-
-### Discovery (`lib/discovery.sh`)
-
-- Runs 11 parallel subshells inside a single `gum_spin`.
-- Each task writes to a temp file. Results are assembled into `discovery.json`.
-- Gracefully returns empty if tools (brew, mas, npm) are missing.
-
-### Generation (`lib/generate.sh`)
-
-- Reads `selections.json`.
-- Generates `Brewfile`, `install.sh`, `bootstrap.sh`, `.gitignore`, `locations.md`.
-- Copies configs, editor settings, agent configs, dock layout into the repo.
-- Initializes git and optionally pushes to GitHub via `gh`.
-
-### Sync (`lib/sync.sh`)
-
-- `sync_configs`: Compares tracked `config/` dirs to live `~/.config/` dirs.
-- `sync_brewfile`: Detects new taps/formulae/casks/mas apps and appends to `Brewfile`.
-- `sync_npm`: Detects new global npm packages and appends to `npm-globals.txt`.
-- `sync_agents`: Copies changed files for selected agentic tools.
-
----
-
-## Critical Conventions for Agents
+## Durable Invariants
 
 ### Bash Safety
-- **Every script** uses `set -euo pipefail`.
-- **`local` is only valid inside functions.** Never use `local` at the top level of a script or inside a `case` block.
-- **`((var++))` returns exit code 1 when `var` is 0.** Under `set -e`, this kills the script. Always use `((var++)) || true`.
+- Scripts use `set -euo pipefail`.
+- `local` is only valid inside functions.
+- `((var++))` can exit under `set -e` when the old value is `0`; use `((var++)) || true`.
+- Prefer `printf '%s\n' "$value"` over variable format strings.
 
-### Gum Integration
-- **Gum is a hard requirement.** The entry script (`dotfriend`) calls `require_gum()` before anything else. If Gum is missing and Homebrew is present, it auto-installs. If Homebrew is missing, it exits with install instructions.
-- Never call `gum` directly; use the wrappers in `lib/gum.sh` (`gum_choose`, `gum_confirm`, `gum_input`, `gum_spin`, `gum_style`).
-- The wrappers still contain plain-bash fallbacks for testing (e.g. setting `GUM_AVAILABLE=false`), but the production path always has Gum available.
-- `gum confirm` does **not** accept `--prompt`. The wrapper translates it to a positional argument.
-- `gum choose --no-limit` calls must include `--no-show-help` to hide the outdated "x for toggle" footer.
-- Theme env vars are set in `gum.sh`:
-  - `GUM_CHOOSE_CURSOR_FOREGROUND=""` (white cursor)
-  - `GUM_CHOOSE_SHOW_HELP="false"` (suppress footer)
+### Runtime and Gum
+- `dotfriend start` and `dotfriend sync` bootstrap runtime dependencies before doing real work. Do not assume the old `require_gum()` flow still exists.
+- Treat Gum as required in production. Use wrappers from `lib/gum.sh`, not raw `gum` calls in project code.
+- Gum documentation is primarily its built-in help output: use `gum --help`, then `gum <command> --help`.
+- Use `agent-tui` for validating interactive Gum/TUI flows, not for basic help lookup.
+- `gum confirm` does not accept `--prompt`; the wrapper converts it to a positional prompt.
+- Current theme-related defaults in `lib/gum.sh` include:
+  - `GUM_CHOOSE_CURSOR_FOREGROUND=""`
+  - `GUM_CHOOSE_SHOW_HELP="true"`
 
-### JSON Handling
-- Always check `command -v jq` first. Use `jq` when available.
-- Fall back to naive `grep`/`sed` only for simple string values. Never rely on fallbacks for nested JSON arrays.
-- When parsing arrays with `jq -r '.items[] | .id'`, ensure the query extracts scalars, not objects, to avoid multi-line garbage in `while read` loops.
+### JSON and Caches
+- `jq` is part of dotfriend's runtime bootstrap, so prefer `jq` in normal repo code.
+- Preserve or add non-`jq` fallbacks only in intentionally portable paths such as shared helpers or generated scripts that may run on a fresh Mac before all tooling is present.
+- When reading JSON arrays for shell loops, extract scalars, not objects.
+- Discovery cache: `~/.cache/dotfriend/discovery.json`
+- Selections cache: `~/.cache/dotfriend/selections.json`
 
-### Discovery & Caching
-- Discovery writes to `~/.cache/dotfriend/discovery.json`.
-- Selections write to `~/.cache/dotfriend/selections.json`.
-- All discovery functions gracefully return empty if the underlying tool is missing (e.g., `mas`, `npm`, `brew`).
-
-### Error Handling
-- **Soft-fail everywhere in generated scripts.** One bad brew formula, npm package, or dockutil command must not stop the restore. Use `soft_run` or `|| true`.
-- `trap` with `set -u` is dangerous. If a `trap` references a `local` variable, expand the variable at trap-set time: `trap "rm -rf '$tmpdir'" EXIT`, and always call `trap - EXIT` before returning from the function.
-
-### Path Safety
-- Never use `rm -rf "${var}/path"` unless `var` is validated non-empty. Use `${var:?}` to fail safe.
-- `brew_prefix()` checks `/opt/homebrew` (Apple Silicon) → `/usr/local` (Intel) → `$HOME/homebrew`.
-
----
-
-## Repeated Mistakes & Solutions
-
-| Mistake | Why It Happens | Solution |
-|---------|---------------|----------|
-| `local: can only be used in a function` | Using `local` at top level or in `case` blocks. | Remove `local` keyword. |
-| `((0++))` kills script under `set -e` | Arithmetic `(( ))` returns 1 when the expression evaluates to 0. | Append `\|\| true`: `((count++)) \|\| true` |
-| `tmpdir: unbound variable` on exit | `trap` references a `local` variable that was destroyed on function return. | Expand in trap string: `trap "rm -rf '$tmpdir'" EXIT`; clear before return: `trap - EXIT` |
-| `gum confirm --prompt` fails | Gum's `confirm` takes the prompt as a positional arg, not `--prompt`. | The wrapper in `gum.sh` already handles this. Do not pass `--prompt` directly to `gum`. |
-| `gum_spin` fallback crashes | Fallback strips flags but leaves their arguments in the command array. | Ensure the fallback consumes both the flag and its argument: `shift 2` for `--spinner`, `--title`, `--show-output`. |
-| Empty array expansion → `[""]` in JSON | `"${array[@]:-}"` expands to a single empty string when the array is empty. | Use `"${array[@]}"` without `:-` in `_write_selections_json`. |
-| Agent sync reads JSON objects as IDs | `jq -r '.agents[]'` pretty-prints objects across multiple lines. | Use `jq -r '.agents[] \| .id'` to extract scalar IDs only. |
-| Sync exits silently when repo not found | `_find_repo` returns 1; `set -e` kills the script before the `if [[ -z ]]` check. | Use `REPO_DIR="$(_find_repo)" \|\| true` |
-| `printf` with variable format strings | `printf "$var\n"` expands `$var` as the format string, causing crashes if `%` is present. | Use `printf '%s\n' "$var"` |
-| `cask-map.json` has duplicate keys | JSON parsers silently overwrite duplicates, causing inconsistent behavior. | Deduplicate before adding entries. |
-| Generated scripts unguarded under `set -e` | `_symlink`, `_copy`, `_rsync_agent` call `rm -rf` or `cp` without `||` guards. | Wrap destructive calls in `soft_run` or `\|\| { log_error ...; }` |
-| Prompt fallbacks pollute stdout | `prompt_input` and `gum_choose` fallbacks print menus to stdout, corrupting captured output. | Redirect prompts and menus to `>&2`. |
-
----
+### Generated Script Behavior
+- Generated restore scripts should soft-fail where practical. One bad brew formula, npm package, or dock command should not abort the whole restore.
+- Be careful with `trap` under `set -u`: expand local paths when setting the trap, and clear the trap before returning if needed.
+- Never use `rm -rf "${var}/..."` unless `var` is known-safe; prefer `${var:?}` guards.
 
 ## Testing
 
-- Run `./tests/verify_fixes.sh` after any change to `lib/` or `templates/`.
-- Run `shellcheck` on rendered output (not templates with `{{PLACEHOLDERS}}`).
-- Test the gum-fallback path by setting `GUM_AVAILABLE=false` before sourcing `gum.sh`.
+- After changes in `lib/` or `templates/`, run `./tests/verify_fixes.sh`.
+- If you touch generation logic or templates, also run `./tests/generate_regressions.sh`.
+- If you touch discovery or cask matching logic, run `./tests/discovery_strategy_test.sh`.
+- `tests/batch_discovery_test.sh` and `tests/benchmark_approaches.sh` are exploratory/benchmark scripts, not the default regression suite.
+- If you change `lib/gum.sh`, test the fallback path with `GUM_AVAILABLE=false` before sourcing it.
+- Use `agent-tui` when you need to verify wizard behavior in a real PTY.
 
-### TUI Testing with `agent-tui`
-
-Use [`agent-tui`](https://github.com/pproenca/agent-tui) to programmatically drive and inspect the Gum-based wizard in a real PTY session. This is the preferred way to verify interactive flows (choosing apps, toggling options, navigating menus) without manual clicking.
-
-**Install:** `cargo install agent-tui` (requires Rust toolchain) or download a release binary.
-
-**Typical workflow:**
-
-```bash
-# 1. Start dotfriend in a virtual terminal
-agent-tui run "./dotfriend start" --cols 120 --rows 40
-
-# 2. Inspect the current screen
-agent-tui screenshot --strip-ansi
-
-# 3. Interact with the TUI
-agent-tui press ArrowDown ArrowDown Space   # navigate + toggle
-agent-tui press Enter                        # confirm
-agent-tui type "my-repo"                     # text input
-
-# 4. Wait for a state change
-agent-tui wait "Select formulae" --assert -t 10000
-
-# 5. Clean up
-agent-tui kill --yes
-```
-
-**Key commands for dotfriend:**
-
-| Command | Purpose |
-|---------|---------|
-| `run` | Launch `./dotfriend start` or `./dotfriend sync` in a PTY. Always specify `--cols` and `--rows`. |
-| `screenshot` | Capture terminal buffer. Use `--strip-ansi` for clean assertions. |
-| `press` | Send keys (`Enter`, `Space`, `ArrowDown`, `Ctrl+C`, etc.). |
-| `type` | Type literal text into inputs (e.g., repo name, paths). |
-| `wait` | Block until text appears, disappears (`--gone`), or the screen stabilizes (`--stable`). Use `--assert` to fail on timeout. |
-| `kill` | Terminate the session. Always use `--yes` in scripts. |
-
-**Full CLI reference:** https://raw.githubusercontent.com/pproenca/agent-tui/refs/heads/master/docs/cli/agent-tui.md
-
-**Example: smoke-test the first two wizard steps**
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-agent-tui run "./dotfriend start" --cols 120 --rows 40
-
-# Wait for welcome screen
-agent-tui wait "Welcome to dotfriend" --assert -t 15000
-
-# Press Enter to continue past welcome
-agent-tui press Enter
-
-# Wait for app selection step
-agent-tui wait "Select applications" --assert -t 15000
-
-# Select first app, then confirm
-agent-tui press Space Enter
-
-# Assert we landed on the next step
-agent-tui wait "Select formulae" --assert -t 10000
-
-agent-tui kill --yes
-echo "Smoke test passed"
-```
-
-Tips:
-- Use `--json` on any command for machine-readable output (e.g., `agent-tui --json screenshot`).
-- Use `--no-input` flag to prevent interactive prompts from hanging automation.
-- Keep a `cleanup` trap: `trap 'agent-tui kill --yes' EXIT` so failed assertions don't leave orphaned sessions.
-
----
-
-## Quick Reference: Files to Edit for Common Tasks
+## Task Map
 
 | Task | File(s) |
 |------|---------|
-| Add a new wizard step | `lib/wizard.sh` |
-| Change discovery logic | `lib/discovery.sh` |
-| Change generated output | `lib/generate.sh` + `templates/` |
-| Fix TUI styling | `lib/gum.sh` |
-| Add a new agentic tool | `lib/agent-tools.json` + `lib/discovery.sh` |
-| Fix sync behavior | `lib/sync.sh` |
-| Fix install/restore logic | `templates/install.sh` or `templates/bootstrap.sh` |
-| Update CLI args / commands | `dotfriend` (entry script) |
+| Update CLI args or command dispatch | `dotfriend`, `bin/dotfriend.js` |
+| Change runtime bootstrapping | `lib/bootstrap.sh` |
+| Add or modify wizard steps | `lib/wizard.sh` |
+| Change discovery behavior | `lib/discovery.sh`, `lib/cask-map.json`, `lib/agent-tools.json` |
+| Change generated repo contents | `lib/generate.sh`, `templates/` |
+| Change sync behavior | `lib/sync.sh` |
+| Change Gum wrappers or TUI behavior | `lib/gum.sh` |
+| Update regression coverage | `tests/` |
+
+## Keep Out of AGENTS
+
+- Long product descriptions
+- Full architecture walkthroughs that duplicate `README.md`
+- Large troubleshooting tables for one-off historical bugs
+- Long `agent-tui` tutorials or smoke-test scripts
+
+If guidance becomes long, move it to a dedicated doc and leave a short pointer here.
