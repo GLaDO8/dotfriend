@@ -163,6 +163,12 @@ EOF
     ok "github push path avoids DRY_RUN crash"
   fi
 
+  if [[ "$output" == *"command not found"* || "$output" == *"invalid option"* ]]; then
+    ko "readme generation avoids shell interpolation errors" "saw shell error output during repo generation"
+  else
+    ok "readme generation avoids shell interpolation errors"
+  fi
+
   if [[ "$output" == *"NOISY_GIT_INIT_STDOUT"* || "$output" == *"NOISY_GIT_INIT_STDERR"* || "$output" == *"NOISY_GIT_ADD_STDOUT"* || "$output" == *"NOISY_GIT_COMMIT_STDOUT"* ]]; then
     ko "git setup stays quiet in terminal output" "saw suppressed git command output"
   else
@@ -191,6 +197,12 @@ EOF
     ko "install.sh stays portable" "embedded source-machine path in install.sh"
   else
     ok "install.sh stays portable"
+  fi
+
+  if grep -q '`bootstrap.sh`' "${repo_dir}/README.md" && grep -q '`Brewfile`' "${repo_dir}/README.md"; then
+    ok "generated readme keeps literal markdown command names"
+  else
+    ko "generated readme keeps literal markdown command names" "missing literal markdown backticks"
   fi
 
   if grep -q "DOTFILES_DIR=\"\${HOME}/work-mac\"" "${repo_dir}/bootstrap.sh"; then
