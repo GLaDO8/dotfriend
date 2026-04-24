@@ -2,6 +2,8 @@
 
 Agent handoff for this repo. Keep this file focused on implementation guidance, not product docs. For user-facing overview, commands, and installation, see `README.md`.
 
+When making considerable user-facing or workflow changes, update `README.md` in the same change.
+
 ## High-Value Files
 
 | File | Purpose |

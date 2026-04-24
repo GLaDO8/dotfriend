@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECT_ROOT="/Users/shreyasgupta/local-documents/dotfriend"
+PROJECT_ROOT="${PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 TEST_DIR="$(mktemp -d)"
 
 PASS=0
@@ -439,11 +439,83 @@ EOF
   fi
 }
 
+test_macos_preferences_backup() {
+  setup_case "macos_preferences"
+  cat > "${DOTFRIEND_CACHE_DIR}/selections.json" <<'EOF'
+{
+  "apps": [],
+  "agents": [],
+  "formulae": [],
+  "taps": [],
+  "npm_globals": [],
+  "dotfiles": [],
+  "config_dirs": [],
+  "editors": {"vscode": false, "cursor": false},
+  "dock": {"backup": false, "defaults": false},
+  "macos_preferences": {
+    "backup": true,
+    "categories": ["global_ui", "keyboard_shortcuts", "default_apps", "network", "security_privacy"]
+  },
+  "xcode": false,
+  "telemetry": false,
+  "github": {"repo_name": "dotfiles", "private": true}
+}
+EOF
+
+  source_generator
+
+  local repo_dir="${TEST_DIR}/macos_preferences/out"
+  if generate_repo "$repo_dir" false >/dev/null 2>&1; then
+    ok "macOS preferences repo generation succeeds"
+  else
+    ko "macOS preferences repo generation succeeds" "generate_repo failed"
+    return
+  fi
+
+  if [[ -f "${repo_dir}/macos/defaults/com.apple.symbolichotkeys.plist" ]]; then
+    ok "keyboard shortcut preferences are backed up"
+  else
+    ko "keyboard shortcut preferences are backed up" "missing com.apple.symbolichotkeys.plist"
+  fi
+
+  if [[ -f "${repo_dir}/macos/default-apps.duti" ]]; then
+    ok "default app associations are exported for duti"
+  else
+    ko "default app associations are exported for duti" "missing default-apps.duti"
+  fi
+
+  if grep -q 'brew "duti"' "${repo_dir}/Brewfile"; then
+    ok "duti is included when default apps are selected"
+  else
+    ko "duti is included when default apps are selected" "missing Brewfile helper"
+  fi
+
+  if grep -q 'duti -s "\$bundle" "\$handler"' "${repo_dir}/install.sh"; then
+    ok "install.sh restores default apps with duti"
+  else
+    ko "install.sh restores default apps with duti" "missing duti restore loop"
+  fi
+
+  if [[ -f "${repo_dir}/macos/reports/network.txt" && -f "${repo_dir}/macos/reports/security-privacy.txt" ]]; then
+    ok "report-only macOS settings are captured"
+  else
+    ko "report-only macOS settings are captured" "missing network or security report"
+  fi
+
+  if [[ -f "${repo_dir}/macos/defaults/NSGlobalDomain.plist" ]] &&
+    /usr/libexec/PlistBuddy -c "Print :NSUserDictionaryReplacementItems" "${repo_dir}/macos/defaults/NSGlobalDomain.plist" >/dev/null 2>&1; then
+    ko "cloud-backed text replacements are skipped" "NSUserDictionaryReplacementItems was present"
+  else
+    ok "cloud-backed text replacements are skipped"
+  fi
+}
+
 printf '\n1. Generation regressions\n'
 test_repo_name_and_github_push
 test_agent_and_shared_config_copy
 test_filtered_recursive_copy_and_layout
 test_cursor_extension_manifest_and_metadata
+test_macos_preferences_backup
 
 printf '\n========================================\n'
 printf 'Results: %d passed, %d failed\n' "$PASS" "$FAIL"

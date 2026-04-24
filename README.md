@@ -6,7 +6,7 @@ Built with bash and [Gum](https://github.com/charmbracelet/gum) (by Charm). No c
 
 ## What it does
 
-**`dotfriend start`** — An interactive wizard that scans your Mac, lets you pick what to back up, and generates a complete `dotfiles` repository. It detects your apps, Homebrew packages, npm globals, shell configs, editor settings, agentic tool configs, and even your Dock layout.
+**`dotfriend start`** — An interactive wizard that scans your Mac, lets you pick what to back up, and generates a complete `dotfiles` repository. It detects your apps, Homebrew packages, npm globals, shell configs, editor settings, agentic tool configs, Dock layout, and macOS preferences.
 
 **`dotfriend sync`** — Keeps your repo in sync with your machine. Detects new brew packages, changed config files, and updated agent settings. Optionally commits and pushes to GitHub.
 
@@ -47,6 +47,7 @@ Homebrew and Gum are installed automatically if missing.
 - **Homebrew** — taps, formulae, casks, Mac App Store apps (via `mas`)
 - **npm** — globally installed packages
 - **Dock layout** — app list (restorable via `dockutil`)
+- **macOS preferences** — Finder, Dock settings, keyboard shortcuts, input devices, menu bar, screenshots, accessibility, default apps via `duti`, Apple app preferences, and system reports for network/power/security/printing/Time Machine. Cloud-backed text replacements, fonts, and third-party app preferences are skipped.
 
 ### Config files
 - Shell configs (`.zshrc`, `.bashrc`, `.gitconfig`, `.tmux.conf`, etc.)
@@ -74,7 +75,7 @@ Only config files are backed up — never chat history, cache, or logs.
 - macOS (Apple Silicon or Intel)
 - bash 4+
 
-`dotfriend` automatically installs **Homebrew** and **Gum** if they're not present. Optional enhancements come from `jq`, `gh`, `mas`, and `npm` if you have them.
+`dotfriend` automatically installs its runtime helpers if they're not present, including **Homebrew**, **Gum**, `jq`, `gh`, `mas`, `duti`, `node`, and `npm`.
 
 ## Why dotfriend?
 
