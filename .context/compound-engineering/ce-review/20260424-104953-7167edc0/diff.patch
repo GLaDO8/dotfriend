@@ -1,0 +1,1187 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index 6e31cd3..41a755d 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -1,14 +1,16 @@
+ # dotfriend
+ 
+ Agent handoff for this repo. Keep this file focused on implementation guidance, not product docs. For user-facing overview, commands, and installation, see `README.md`.
+ 
++When making considerable user-facing or workflow changes, update `README.md` in the same change.
++
+ ## High-Value Files
+ 
+ | File | Purpose |
+ |------|---------|
+ | `dotfriend` | Main CLI entrypoint. Bootstraps runtime deps for `start`/`sync`, then dispatches commands. |
+ | `bin/dotfriend.js` | npm package wrapper that invokes `./dotfriend`. |
+ | `lib/bootstrap.sh` | Ensures Xcode CLI tools, Homebrew, and runtime dependencies exist. |
+ | `lib/wizard.sh` | Interactive `dotfriend start` flow. Writes selections to cache. |
+ | `lib/discovery.sh` | Scans machine state and writes discovery cache. |
+ | `lib/generate.sh` | Builds the output dotfiles repo from cached selections. |
+diff --git a/README.md b/README.md
+index e0e0eba..0d20d1e 100644
+--- a/README.md
++++ b/README.md
+@@ -1,19 +1,19 @@
+ # dotfriend
+ 
+ A macOS CLI that turns your Mac into a version-controlled dotfiles repo — automatically.
+ 
+ Built with bash and [Gum](https://github.com/charmbracelet/gum) (by Charm). No compilation, no package manager needed for the tool itself.
+ 
+ ## What it does
+ 
+-**`dotfriend start`** — An interactive wizard that scans your Mac, lets you pick what to back up, and generates a complete `dotfiles` repository. It detects your apps, Homebrew packages, npm globals, shell configs, editor settings, agentic tool configs, and even your Dock layout.
++**`dotfriend start`** — An interactive wizard that scans your Mac, lets you pick what to back up, and generates a complete `dotfiles` repository. It detects your apps, Homebrew packages, npm globals, shell configs, editor settings, agentic tool configs, Dock layout, and macOS preferences.
+ 
+ **`dotfriend sync`** — Keeps your repo in sync with your machine. Detects new brew packages, changed config files, and updated agent settings. Optionally commits and pushes to GitHub.
+ 
+ The generated repo includes a `bootstrap.sh` for brand-new Macs and an `install.sh` for full restoration — so you can go from a fresh macOS install to a fully configured machine in one command.
+ 
+ ## Installation
+ 
+ ```bash
+ npx dotfriend start
+ ```
+@@ -40,20 +40,21 @@ Homebrew and Gum are installed automatically if missing.
+ | `dotfriend sync --quick` | Non-interactive sync. Skip prompts and commit with a default message. |
+ | `dotfriend --help` | Show usage. |
+ | `dotfriend --version` | Show version. |
+ 
+ ## What gets backed up
+ 
+ ### System & packages
+ - **Homebrew** — taps, formulae, casks, Mac App Store apps (via `mas`)
+ - **npm** — globally installed packages
+ - **Dock layout** — app list (restorable via `dockutil`)
++- **macOS preferences** — Finder, Dock settings, keyboard shortcuts, input devices, menu bar, screenshots, accessibility, default apps via `duti`, Apple app preferences, and system reports for network/power/security/printing/Time Machine. Cloud-backed text replacements, fonts, and third-party app preferences are skipped.
+ 
+ ### Config files
+ - Shell configs (`.zshrc`, `.bashrc`, `.gitconfig`, `.tmux.conf`, etc.)
+ - `~/.config/` directories for detected apps
+ - Editor settings (VS Code, Cursor — including extensions)
+ 
+ ### Agentic tools (selective, smart backup)
+ Only config files are backed up — never chat history, cache, or logs.
+ 
+ | Tool | What gets backed up |
+@@ -67,21 +68,21 @@ Only config files are backed up — never chat history, cache, or logs.
+ | **Zed** | `settings.json`, `keymap.json`, `themes/` |
+ | **Windsurf** | `settings.json`, `keybindings.json`, `extensions/` |
+ | **Cline** | `settings.json` |
+ | **Trae** | `settings.json`, `keybindings.json`, `extensions/` |
+ 
+ ## Requirements
+ 
+ - macOS (Apple Silicon or Intel)
+ - bash 4+
+ 
+-`dotfriend` automatically installs **Homebrew** and **Gum** if they're not present. Optional enhancements come from `jq`, `gh`, `mas`, and `npm` if you have them.
++`dotfriend` automatically installs its runtime helpers if they're not present, including **Homebrew**, **Gum**, `jq`, `gh`, `mas`, `duti`, `node`, and `npm`.
+ 
+ ## Why dotfriend?
+ 
+ Most dotfiles tools expect you to hand-write your config. `dotfriend` starts from your *actual* machine state and builds the repo for you. It's designed for people who:
+ 
+ - Want a dotfiles repo but haven't gotten around to making one
+ - Frequently set up new Macs and want a one-command restore
+ - Use multiple agentic AI tools and want their configs versioned
+ - Prefer bash + Gum over compiled binaries for transparency and hackability
+ 
+diff --git a/lib/bootstrap.sh b/lib/bootstrap.sh
+index e80469f..11a59f1 100644
+--- a/lib/bootstrap.sh
++++ b/lib/bootstrap.sh
+@@ -6,20 +6,21 @@ set -euo pipefail
+ 
+ # shellcheck source=common.sh
+ source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
+ 
+ DOTFRIEND_RUNTIME_FORMULAE=(
+   git
+   jq
+   gum
+   gh
+   mas
++  duti
+   node
+ )
+ 
+ refresh_homebrew_env() {
+   local brew_path
+   brew_path="$(brew_bin)"
+ 
+   if [[ -x "$brew_path" ]]; then
+     eval "$("$brew_path" shellenv)"
+   fi
+@@ -104,21 +105,21 @@ ensure_runtime_formulae() {
+   for formula in "${missing[@]}"; do
+     log_info "Installing ${formula}..."
+     brew install "$formula"
+   done
+ }
+ 
+ verify_runtime_dependencies() {
+   local cmd
+ 
+   require_bootstrap_command "brew"
+-  for cmd in git jq gum gh mas npm; do
++  for cmd in git jq gum gh mas duti npm; do
+     require_bootstrap_command "$cmd"
+   done
+ }
+ 
+ bootstrap_runtime() {
+   ensure_dir "${DOTFRIEND_CACHE_DIR}"
+   ensure_xcode_cli
+   ensure_homebrew
+   ensure_runtime_formulae
+   refresh_homebrew_env
+diff --git a/lib/generate.sh b/lib/generate.sh
+index 46ab805..f33485a 100644
+--- a/lib/generate.sh
++++ b/lib/generate.sh
+@@ -3,20 +3,23 @@
+ # shellcheck shell=bash
+ 
+ set -euo pipefail
+ 
+ # shellcheck source=common.sh
+ source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
+ 
+ # shellcheck source=gum.sh
+ source "$(dirname "${BASH_SOURCE[0]}")/gum.sh"
+ 
++# shellcheck source=macos_preferences.sh
++source "$(dirname "${BASH_SOURCE[0]}")/macos_preferences.sh"
++
+ # ─────────────────────────────────────────────────────────────
+ # Paths
+ # ─────────────────────────────────────────────────────────────
+ 
+ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ TEMPLATES_DIR="${SCRIPT_DIR}/../templates"
+ SELECTIONS_FILE="${DOTFRIEND_CACHE_DIR}/selections.json"
+ 
+ # ─────────────────────────────────────────────────────────────
+ # State
+@@ -221,20 +224,32 @@ _generate_brewfile() {
+           mas_name="${mas_part%%,*}"
+           mas_id="${mas_part##*id:}"
+           printf 'mas "%s", id: %s\\n' "$mas_name" "$mas_id"
+         fi
+       done <<< "$apps_json"
+       printf "\\n"
+     fi
+ 
+     # npm globals (not in Brewfile, but note: we may want node in Brewfile)
+     # We handle npm in install.sh, not Brewfile
++    local macos_prefs; macos_prefs="$(_jq_str "$SELECTIONS_FILE" '.macos_preferences')"
++    local dock_json; dock_json="$(_jq_str "$SELECTIONS_FILE" '.dock')"
++    if command -v jq >/dev/null 2>&1; then
++      local include_duti="false"
++      local default_apps; default_apps="$(jq -r 'if (.backup // false) then ((.categories // []) | index("default_apps") != null) else false end' <<< "$macos_prefs" 2>/dev/null || true)"
++      local dock_defaults; dock_defaults="$(jq -r '.defaults // false' <<< "$dock_json" 2>/dev/null || true)"
++      [[ "$default_apps" == "true" || "$dock_defaults" == "true" ]] && include_duti="true"
++      if [[ "$include_duti" == "true" ]]; then
++        printf "\n# Restore helpers\n"
++        printf 'brew "duti"\n'
++      fi
++    fi
+   } > "$out"
+ 
+   log_ok "Brewfile generated"
+ }
+ 
+ _replace_placeholder() {
+   local file="$1" placeholder="$2" content_file="$3"
+   local temp; temp="$(mktemp)"
+   awk -v ph="$placeholder" -v cf="$content_file" '
+     index($0, ph) > 0 {
+@@ -286,20 +301,23 @@ _generate_install_sh() {
+ 
+   _build_vscode_block > "$tmpfile"
+   _replace_placeholder "$out" "{{VSCODE_BLOCK}}" "$tmpfile"
+ 
+   _build_cursor_block > "$tmpfile"
+   _replace_placeholder "$out" "{{CURSOR_BLOCK}}" "$tmpfile"
+ 
+   _build_dock_block > "$tmpfile"
+   _replace_placeholder "$out" "{{DOCK_BLOCK}}" "$tmpfile"
+ 
++  _build_macos_defaults_block > "$tmpfile"
++  _replace_placeholder "$out" "{{MACOS_DEFAULTS_BLOCK}}" "$tmpfile"
++
+   _build_duti_block > "$tmpfile"
+   _replace_placeholder "$out" "{{DUTI_BLOCK}}" "$tmpfile"
+ 
+   _build_telemetry_block > "$tmpfile"
+   _replace_placeholder "$out" "{{TELEMETRY_BLOCK}}" "$tmpfile"
+ 
+   rm -f "$tmpfile"
+ 
+   chmod +x "$out"
+   log_ok "install.sh generated"
+@@ -630,30 +648,68 @@ _build_dock_block() {
+       printf '      soft_run dockutil --add "$app" --no-restart || true\n'
+       printf '    done < "$DOTFILES_DIR/dock/dock-apps.txt"\n'
+       printf "    killall Dock 2>/dev/null || true\n"
+       printf "  else\n"
+       printf "    log_warn \"dockutil not available; skipping dock restore\"\n"
+       printf "  fi\n"
+     fi
+   fi
+ }
+ 
++_build_macos_defaults_block() {
++  local macos_prefs; macos_prefs="$(_jq_str "$SELECTIONS_FILE" '.macos_preferences')"
++  printf "\n  # macOS defaults restore\n"
++  if [[ -n "$macos_prefs" ]] && command -v jq >/dev/null 2>&1; then
++    local backup; backup="$(jq -r '.backup // false' <<< "$macos_prefs" 2>/dev/null || true)"
++    if [[ "$backup" == "true" ]]; then
++      printf '  if [[ -d "$DOTFILES_DIR/macos/defaults" ]]; then\n'
++      printf '    log_info "Restoring macOS defaults..."\n'
++      printf '    while IFS= read -r plist; do\n'
++      printf '      [[ -f "$plist" ]] || continue\n'
++      printf '      domain="$(basename "$plist" .plist)"\n'
++      printf '      domain="${domain//__//}"\n'
++      printf '      if [[ "$domain" == "NSGlobalDomain" ]]; then\n'
++      printf '        soft_run defaults import NSGlobalDomain "$plist" || true\n'
++      printf '      else\n'
++      printf '        soft_run defaults import "$domain" "$plist" || true\n'
++      printf '      fi\n'
++      printf '    done < <(find "$DOTFILES_DIR/macos/defaults" -maxdepth 1 -name "*.plist" -print 2>/dev/null | sort)\n'
++      printf '    killall cfprefsd 2>/dev/null || true\n'
++      printf '    killall Finder 2>/dev/null || true\n'
++      printf '    killall Dock 2>/dev/null || true\n'
++      printf '    killall SystemUIServer 2>/dev/null || true\n'
++      printf '  fi\n'
++    fi
++  fi
++}
++
+ _build_duti_block() {
+   local dock; dock="$(_jq_str "$SELECTIONS_FILE" '.dock')"
++  local macos_prefs; macos_prefs="$(_jq_str "$SELECTIONS_FILE" '.macos_preferences')"
+   printf "\n  # Default app associations\n"
+-  if [[ -n "$dock" ]] && command -v jq >/dev/null 2>&1; then
++  if command -v jq >/dev/null 2>&1; then
+     local defaults; defaults="$(jq -r '.defaults // false' <<< "$dock" 2>/dev/null || true)"
+-    if [[ "$defaults" == "true" ]]; then
++    local selected_default_apps="false"
++    if [[ -n "$macos_prefs" ]]; then
++      selected_default_apps="$(jq -r 'if (.backup // false) then ((.categories // []) | index("default_apps") != null) else false end' <<< "$macos_prefs" 2>/dev/null || true)"
++    fi
++    if [[ "$defaults" == "true" || "$selected_default_apps" == "true" ]]; then
+       printf "  if command -v duti >/dev/null 2>&1; then\n"
+-      printf "    log_info \"Setting default app associations...\"\n"
+-      printf "    # Add duti rules here as needed\n"
+-      printf "    # soft_run duti -s com.choosyosx.Choosy http all || true\n"
++      printf '    if [[ -f "$DOTFILES_DIR/macos/default-apps.duti" ]]; then\n'
++      printf '      log_info "Restoring default app associations..."\n'
++      printf '      while IFS=$'"'"'\t'"'"' read -r bundle handler role; do\n'
++      printf '        [[ -n "$bundle" && -n "$handler" ]] || continue\n'
++      printf '        soft_run duti -s "$bundle" "$handler" "${role:-all}" || true\n'
++      printf '      done < "$DOTFILES_DIR/macos/default-apps.duti"\n'
++      printf '    else\n'
++      printf '      log_warn "No duti rules found; skipping default app associations"\n'
++      printf '    fi\n'
+       printf "  else\n"
+       printf "    log_warn \"duti not available; skipping default app associations\"\n"
+       printf "  fi\n"
+     fi
+   fi
+ }
+ 
+ _build_telemetry_block() {
+   local telemetry; telemetry="$(_jq_str "$SELECTIONS_FILE" '.telemetry // false')"
+   printf "\n  # Telemetry disabling\n"
+@@ -833,20 +889,51 @@ _copy_dock() {
+       if command -v dockutil >/dev/null 2>&1; then
+         dockutil --list > "${dest}/dock-apps.txt" 2>/dev/null || true
+         log_ok "Dock layout saved"
+       else
+         log_warn "dockutil not installed; skipping dock backup"
+       fi
+     fi
+   fi
+ }
+ 
++_copy_macos_preferences() {
++  local macos_prefs; macos_prefs="$(_jq_str "$SELECTIONS_FILE" '.macos_preferences')"
++  local dock; dock="$(_jq_str "$SELECTIONS_FILE" '.dock')"
++  if ! command -v jq >/dev/null 2>&1; then
++    return 0
++  fi
++
++  local -a categories=()
++  if [[ -n "$macos_prefs" ]]; then
++    local backup; backup="$(jq -r '.backup // false' <<< "$macos_prefs" 2>/dev/null || true)"
++    if [[ "$backup" == "true" ]]; then
++      while IFS= read -r category; do
++        [[ -n "$category" ]] && categories+=("$category")
++      done < <(jq -r '.categories // [] | .[]' <<< "$macos_prefs" 2>/dev/null || true)
++    fi
++  fi
++
++  if [[ -n "$dock" ]]; then
++    local dock_defaults; dock_defaults="$(jq -r '.defaults // false' <<< "$dock" 2>/dev/null || true)"
++    if [[ "$dock_defaults" == "true" ]]; then
++      categories+=("default_apps")
++    fi
++  fi
++
++  [[ ${#categories[@]} -gt 0 ]] || return 0
++
++  log_info "Backing up macOS preferences..."
++  backup_macos_preferences "${GEN_DIR}/macos" "${categories[@]}"
++  log_ok "macOS preferences saved"
++}
++
+ # ─────────────────────────────────────────────────────────────
+ # Scripts copying
+ # ─────────────────────────────────────────────────────────────
+ 
+ _copy_scripts() {
+   log_info "Copying scripts..."
+   local src_dir="${TEMPLATES_DIR}/scripts"
+   local dest_dir="${GEN_DIR}/scripts"
+   ensure_dir "$dest_dir"
+ 
+@@ -1033,36 +1120,38 @@ generate_repo() {
+   ensure_dir "${GEN_DIR}/config"
+   ensure_dir "${GEN_DIR}/config/git"
+   ensure_dir "${GEN_DIR}/zsh"
+   ensure_dir "${GEN_DIR}/vscode"
+   ensure_dir "${GEN_DIR}/cursor"
+   ensure_dir "${GEN_DIR}/claude"
+   ensure_dir "${GEN_DIR}/codex"
+   ensure_dir "${GEN_DIR}/agents/skills"
+   ensure_dir "${GEN_DIR}/agents/agent-docs"
+   ensure_dir "${GEN_DIR}/dock"
++  ensure_dir "${GEN_DIR}/macos"
+ 
+   log_step "Generating dotfiles repository"
+   log_info "Target directory: ${GEN_DIR}"
+ 
+   _generate_brewfile
+   _generate_install_sh
+   _generate_bootstrap_sh
+   _generate_gitignore
+   _generate_locations_md
+   _generate_repo_metadata
+   _generate_readme_md
+ 
+   _copy_configs
+   _copy_editor_configs
+   _copy_agent_configs
+   _copy_dock
++  _copy_macos_preferences
+   _copy_scripts
+ 
+   _init_git
+   _github_push
+ 
+   log_step "All set"
+   if [[ "$GEN_GITHUB_BACKED_UP" == "true" ]]; then
+     log_ok "Your dotfiles repo has been generated and backed up to GitHub."
+   else
+     log_ok "Your dotfiles repo has been generated."
+diff --git a/lib/macos_preferences.sh b/lib/macos_preferences.sh
+new file mode 100644
+index 0000000..0729a74
+--- /dev/null
++++ b/lib/macos_preferences.sh
+@@ -0,0 +1,302 @@
++#!/usr/bin/env bash
++# dotfriend — macOS preference backup helpers
++# shellcheck shell=bash
++
++set -euo pipefail
++
++MACOS_PREFERENCE_CATEGORIES=(
++  "global_ui|Global UI and typing preferences"
++  "dock|Dock settings beyond app order"
++  "finder|Finder and Desktop preferences"
++  "input_devices|Trackpad, mouse, and input devices"
++  "keyboard_shortcuts|Keyboard shortcuts and input settings"
++  "mission_control|Mission Control, Spaces, Stage Manager, and windows"
++  "menu_bar|Menu bar and Control Center"
++  "screenshots|Screenshots and screen recording defaults"
++  "wallpaper_screensaver|Wallpaper, screen saver, and lock screen"
++  "accessibility|Accessibility preferences"
++  "notifications_focus|Notifications and Focus"
++  "spotlight_siri|Spotlight and Siri"
++  "default_apps|Default apps and URL/file handlers"
++  "login_items|Login items and background items report"
++  "energy|Energy, battery, and power settings"
++  "network|Network service, DNS, proxy, and computer name report"
++  "sharing|Sharing, AirDrop, AirPlay, and Handoff preferences"
++  "security_privacy|Security and privacy posture report"
++  "software_update|Software Update and App Store preferences"
++  "time_machine|Time Machine settings report"
++  "printers|Printers, scanners, and CUPS settings report"
++  "services_extensions|Services, Share menu, and Extensions"
++  "apple_apps|Apple app-specific preferences"
++)
++
++macos_preference_category_ids() {
++  local item
++  for item in "${MACOS_PREFERENCE_CATEGORIES[@]}"; do
++    printf '%s\n' "${item%%|*}"
++  done
++}
++
++macos_preference_category_label() {
++  local id="$1" item
++  for item in "${MACOS_PREFERENCE_CATEGORIES[@]}"; do
++    if [[ "${item%%|*}" == "$id" ]]; then
++      printf '%s' "${item#*|}"
++      return 0
++    fi
++  done
++  printf '%s' "$id"
++}
++
++macos_preference_domains_for_category() {
++  case "$1" in
++    global_ui)
++      printf '%s\n' NSGlobalDomain .GlobalPreferences
++      ;;
++    dock)
++      printf '%s\n' com.apple.dock
++      ;;
++    finder)
++      printf '%s\n' com.apple.finder com.apple.desktopservices
++      ;;
++    input_devices)
++      printf '%s\n' \
++        com.apple.AppleMultitouchTrackpad \
++        com.apple.driver.AppleBluetoothMultitouch.trackpad \
++        com.apple.AppleMultitouchMouse \
++        com.apple.driver.AppleBluetoothMultitouch.mouse \
++        com.apple.driver.AppleHIDMouse \
++        com.apple.Multitouch.preferencesBackup
++      ;;
++    keyboard_shortcuts)
++      printf '%s\n' \
++        com.apple.symbolichotkeys \
++        com.apple.keyboard \
++        com.apple.keyboard.preferences \
++        com.apple.HIToolbox \
++        com.apple.TextInputMenu \
++        com.apple.TextInputMenuAgent
++      ;;
++    mission_control)
++      printf '%s\n' com.apple.spaces com.apple.WindowManager
++      ;;
++    menu_bar)
++      printf '%s\n' com.apple.controlcenter com.apple.systemuiserver com.apple.menuextra.clock
++      ;;
++    screenshots)
++      printf '%s\n' com.apple.screencapture
++      ;;
++    wallpaper_screensaver)
++      printf '%s\n' \
++        com.apple.wallpaper \
++        com.apple.wallpaper.agent \
++        com.apple.wallpaper.aerial \
++        com.apple.screensaver \
++        com.apple.loginwindow
++      ;;
++    accessibility)
++      printf '%s\n' \
++        com.apple.universalaccess \
++        com.apple.Accessibility \
++        com.apple.AccessibilityHearingNearby \
++        com.apple.mediaaccessibility.public \
++        com.apple.SpeakSelection
++      ;;
++    notifications_focus)
++      printf '%s\n' com.apple.ncprefs com.apple.notificationcenterui com.apple.donotdisturbd
++      ;;
++    spotlight_siri)
++      printf '%s\n' \
++        com.apple.Spotlight \
++        com.apple.Siri \
++        com.apple.assistant \
++        com.apple.assistant.support \
++        com.apple.assistant.backedup
++      ;;
++    sharing)
++      printf '%s\n' \
++        com.apple.sharingd \
++        com.apple.airplay \
++        com.apple.preferences.sharing.SharingPrefsExtension \
++        com.apple.Sharing-Settings.extension
++      ;;
++    software_update)
++      printf '%s\n' com.apple.SoftwareUpdate com.apple.preferences.softwareupdate com.apple.AppStore
++      ;;
++    services_extensions)
++      printf '%s\n' \
++        pbs \
++        com.apple.ServicesMenu.Services \
++        com.apple.ExtensionsPreferences.ShareMenu \
++        com.apple.preferences.extensions.ServicesWithUI \
++        com.apple.preferences.extensions.ShareMenu
++      ;;
++    apple_apps)
++      printf '%s\n' \
++        com.apple.ActivityMonitor \
++        com.apple.Console \
++        com.apple.DictionaryServices \
++        com.apple.FaceTime \
++        com.apple.FontBook \
++        com.apple.Freeform \
++        com.apple.iCal \
++        com.apple.iChat \
++        com.apple.Maps \
++        com.apple.MobileSMS \
++        com.apple.Music \
++        com.apple.Notes \
++        com.apple.Passwords \
++        com.apple.Photos \
++        com.apple.Preview \
++        com.apple.QuickTimePlayerX \
++        com.apple.remindd \
++        com.apple.Safari \
++        com.apple.StocksKitService \
++        com.apple.Terminal \
++        com.apple.TextEdit \
++        com.apple.TV \
++        com.apple.weather.widget
++      ;;
++  esac
++}
++
++_macos_safe_filename() {
++  printf '%s' "$1" | tr '/:' '__'
++}
++
++_macos_export_domain() {
++  local domain="$1" dest_dir="$2"
++  local file="${dest_dir}/$(_macos_safe_filename "$domain").plist"
++
++  if ! defaults export "$domain" "$file" >/dev/null 2>&1; then
++    rm -f "$file"
++    return 0
++  fi
++
++  # Text replacements often sync via iCloud and commonly contain private snippets.
++  if [[ "$domain" == "NSGlobalDomain" || "$domain" == ".GlobalPreferences" ]]; then
++    /usr/libexec/PlistBuddy -c "Delete :NSUserDictionaryReplacementItems" "$file" >/dev/null 2>&1 || true
++  fi
++}
++
++_macos_write_report() {
++  local out="$1"
++  shift
++  {
++    printf '# %s\n\n' "$(basename "$out" .txt)"
++    "$@" 2>/dev/null || true
++  } > "$out"
++}
++
++_macos_backup_default_apps() {
++  local dest_dir="$1"
++  ensure_dir "$dest_dir"
++
++  local plist json rules
++  plist="$(mktemp)"
++  json="$(mktemp)"
++  rules="${dest_dir}/default-apps.duti"
++
++  if defaults export com.apple.LaunchServices/com.apple.launchservices.secure "$plist" >/dev/null 2>&1 &&
++    plutil -convert json -o "$json" "$plist" >/dev/null 2>&1 &&
++    command -v jq >/dev/null 2>&1; then
++    jq -r '
++      .LSHandlers // []
++      | map(select(.LSHandlerRoleAll? and (.LSHandlerContentType? or .LSHandlerURLScheme?)))
++      | unique_by([.LSHandlerRoleAll, (.LSHandlerContentType // .LSHandlerURLScheme)])
++      | .[]
++      | [
++          .LSHandlerRoleAll,
++          (.LSHandlerContentType // .LSHandlerURLScheme),
++          "all"
++        ]
++      | @tsv
++    ' "$json" > "$rules" 2>/dev/null || true
++  fi
++
++  rm -f "$plist" "$json"
++  [[ -s "$rules" ]] || rm -f "$rules"
++}
++
++backup_macos_preferences() {
++  local dest="$1"
++  shift
++
++  local -a categories=("$@")
++  [[ ${#categories[@]} -gt 0 ]] || return 0
++
++  local defaults_dir="${dest}/defaults"
++  local reports_dir="${dest}/reports"
++  ensure_dir "$defaults_dir"
++  ensure_dir "$reports_dir"
++
++  local category domain
++  for category in "${categories[@]}"; do
++    case "$category" in
++      default_apps)
++        _macos_backup_default_apps "$dest"
++        ;;
++      login_items)
++        _macos_write_report "${reports_dir}/login-items.txt" sfltool dumpbtm
++        ;;
++      energy)
++        _macos_write_report "${reports_dir}/energy.txt" pmset -g custom
++        ;;
++      network)
++        {
++          printf '# network\n\n'
++          printf 'ComputerName: '; scutil --get ComputerName 2>/dev/null || true
++          printf 'HostName: '; scutil --get HostName 2>/dev/null || true
++          printf 'LocalHostName: '; scutil --get LocalHostName 2>/dev/null || true
++          printf '\nNetwork services:\n'
++          networksetup -listallnetworkservices 2>/dev/null || true
++          printf '\nHardware ports:\n'
++          networksetup -listallhardwareports 2>/dev/null || true
++        } > "${reports_dir}/network.txt"
++        ;;
++      security_privacy)
++        {
++          printf '# security-privacy\n\n'
++          printf 'Gatekeeper: '; spctl --status 2>/dev/null || true
++          printf 'FileVault: '; fdesetup status 2>/dev/null || true
++          printf 'Firewall:\n'; /usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate 2>/dev/null || true
++        } > "${reports_dir}/security-privacy.txt"
++        ;;
++      time_machine)
++        {
++          printf '# time-machine\n\n'
++          tmutil destinationinfo 2>/dev/null || true
++          printf '\nExclusions:\n'
++          tmutil listexclusions 2>/dev/null || true
++        } > "${reports_dir}/time-machine.txt"
++        ;;
++      printers)
++        {
++          printf '# printers\n\n'
++          lpstat -v 2>/dev/null || true
++          printf '\nDefault printer:\n'
++          lpstat -d 2>/dev/null || true
++          printf '\nCUPS settings:\n'
++          cupsctl 2>/dev/null || true
++        } > "${reports_dir}/printers.txt"
++        ;;
++      *)
++        while IFS= read -r domain; do
++          [[ -n "$domain" ]] || continue
++          _macos_export_domain "$domain" "$defaults_dir"
++        done < <(macos_preference_domains_for_category "$category")
++        ;;
++    esac
++  done
++
++  {
++    printf '{\n  "categories": ['
++    local first=true
++    for category in "${categories[@]}"; do
++      [[ "$first" == true ]] || printf ', '
++      first=false
++      printf '"%s"' "$category"
++    done
++    printf ']\n}\n'
++  } > "${dest}/manifest.json"
++}
+diff --git a/lib/wizard.sh b/lib/wizard.sh
+index cd6d99f..900ce27 100644
+--- a/lib/wizard.sh
++++ b/lib/wizard.sh
+@@ -8,56 +8,60 @@ set -euo pipefail
+ # Source dependencies
+ # ─────────────────────────────────────────────────────────────
+ 
+ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ # shellcheck source=common.sh
+ source "$SCRIPT_DIR/common.sh"
+ # shellcheck source=gum.sh
+ source "$SCRIPT_DIR/gum.sh"
+ # shellcheck source=discovery.sh
+ source "$SCRIPT_DIR/discovery.sh"
++# shellcheck source=macos_preferences.sh
++source "$SCRIPT_DIR/macos_preferences.sh"
+ 
+ # ─────────────────────────────────────────────────────────────
+ # Globals
+ # ─────────────────────────────────────────────────────────────
+ 
+ DISCOVERY_CACHE="${DOTFRIEND_CACHE_DIR}/discovery.json"
+ SELECTIONS_FILE="${DOTFRIEND_CACHE_DIR}/selections.json"
+ 
+ # Selection arrays
+ SELECTED_APPS=()
+ SELECTED_AGENTS=()
+ SELECTED_FORMULAE=()
+ SELECTED_TAPS=()
+ SELECTED_NPM=()
+ SELECTED_DOTFILES=()
++SELECTED_MACOS_PREFERENCES=()
+ 
+ # Editor selections
+ EDITOR_VSCODE=false
+ EDITOR_CURSOR=false
+ 
+ # Other selections
+ DOCK_BACKUP=false
+ DOCK_DEFAULTS=false
++MACOS_PREFERENCES_BACKUP=false
+ XCODE=false
+ TELEMETRY=false
+ GITHUB_REPO="dotfiles"
+ GITHUB_PRIVATE=true
+ 
+ # ─────────────────────────────────────────────────────────────
+ # Helpers
+ # ─────────────────────────────────────────────────────────────
+ 
+ _require_wizard_runtime() {
+   local cmd
+ 
+-  for cmd in jq gum gh mas npm; do
++  for cmd in jq gum gh mas duti npm; do
+     if ! command -v "$cmd" >/dev/null 2>&1; then
+       log_error "dotfriend bootstrap should have installed '$cmd', but it is still missing."
+       exit 1
+     fi
+   done
+ }
+ 
+ _write_selections_json() {
+   local file="$1"
+   ensure_dir "$(dirname "$file")"
+@@ -156,20 +160,33 @@ _write_selections_json() {
+   [[ "$EDITOR_CURSOR" == true ]] && cursor_str="true"
+   json+='"editors":{"vscode":'"$vscode_str"',"cursor":'"$cursor_str"'},'
+ 
+   # dock
+   local dock_backup_str="false"
+   [[ "$DOCK_BACKUP" == true ]] && dock_backup_str="true"
+   local dock_defaults_str="false"
+   [[ "$DOCK_DEFAULTS" == true ]] && dock_defaults_str="true"
+   json+='"dock":{"backup":'"$dock_backup_str"',"defaults":'"$dock_defaults_str"'},'
+ 
++  # macOS preferences
++  local macos_backup_str="false"
++  [[ "$MACOS_PREFERENCES_BACKUP" == true ]] && macos_backup_str="true"
++  json+='"macos_preferences":{"backup":'"$macos_backup_str"',"categories":['
++  first=true
++  for item in "${SELECTED_MACOS_PREFERENCES[@]}"; do
++    [[ -z "$item" ]] && continue
++    [[ "$first" == true ]] || json+=","
++    first=false
++    json+="\"$(json_escape "$item")\""
++  done
++  json+=']},'
++
+   # xcode
+   local xcode_str="false"
+   [[ "$XCODE" == true ]] && xcode_str="true"
+   json+='"xcode":'"$xcode_str"','
+ 
+   # telemetry
+   local tele_str="false"
+   [[ "$TELEMETRY" == true ]] && tele_str="true"
+   json+='"telemetry":'"$tele_str"','
+ 
+@@ -593,96 +610,163 @@ _step7_editors() {
+ 
+   EDITOR_VSCODE=false
+   EDITOR_CURSOR=false
+   for sel in "${selected[@]}"; do
+     [[ "$sel" == "VS Code" ]] && EDITOR_VSCODE=true
+     [[ "$sel" == "Cursor" ]] && EDITOR_CURSOR=true
+   done
+ }
+ 
+ # ─────────────────────────────────────────────────────────────
+-### Step 8: Dock & Default Apps
++### Step 8: Dock
+ # ─────────────────────────────────────────────────────────────
+ 
+ _step8_dock() {
+-  log_step "Step 8: Dock & Default Apps"
++  log_step "Step 8: Dock"
+ 
+   if gum_confirm --prompt "Back up current Dock layout?"; then
+     DOCK_BACKUP=true
+   fi
++}
++
++# ─────────────────────────────────────────────────────────────
++### Step 9: macOS Defaults
++# ─────────────────────────────────────────────────────────────
++
++_step9_macos_defaults() {
++  log_step "Step 9: macOS Defaults"
++
++  gum_style --foreground 240 \
++    "Recommended backs up Apple/system preferences like Finder, Dock settings, keyboard shortcuts, input devices, menu bar, screenshots, default apps, accessibility, network/power reports, and Apple app preferences. It skips cloud-backed text replacements, fonts, and third-party app preferences."
++
++  local choice
++  choice="$(gum_choose \
++    --header "Choose how to back up macOS settings:" \
++    "Backup recommended settings" \
++    "Custom backup settings" \
++    "Skip macOS settings")"
++
++  SELECTED_MACOS_PREFERENCES=()
++  MACOS_PREFERENCES_BACKUP=false
++
++  if [[ "$choice" == "Skip macOS settings" || -z "$choice" ]]; then
++    return 0
++  fi
++
++  MACOS_PREFERENCES_BACKUP=true
++
++  if [[ "$choice" == "Backup recommended settings" ]]; then
++    while IFS= read -r id; do
++      [[ -n "$id" ]] && SELECTED_MACOS_PREFERENCES+=("$id")
++    done < <(macos_preference_category_ids)
++    return 0
++  fi
++
++  local -a labels=()
++  local -a ids=()
++  local id label
++  while IFS= read -r id; do
++    [[ -n "$id" ]] || continue
++    label="$(macos_preference_category_label "$id")"
++    ids+=("$id")
++    labels+=("$label")
++  done < <(macos_preference_category_ids)
++
++  local -a choose_args=(--no-limit --header "Select macOS settings to back up:")
++  for label in "${labels[@]}"; do
++    choose_args+=(--selected "${label//,/\\,}")
++  done
++  choose_args+=("${labels[@]}")
++
++  local -a selected=()
++  while IFS= read -r line; do
++    selected+=("$line")
++  done < <(gum_choose "${choose_args[@]}")
++
++  local selected_label
++  for selected_label in "${selected[@]}"; do
++    local i
++    for i in "${!labels[@]}"; do
++      if [[ "${labels[$i]}" == "$selected_label" ]]; then
++        SELECTED_MACOS_PREFERENCES+=("${ids[$i]}")
++        break
++      fi
++    done
++  done
+ 
+-  if gum_confirm --prompt "Set default app associations on restore (requires duti)?"; then
+-    DOCK_DEFAULTS=true
++  if [[ ${#SELECTED_MACOS_PREFERENCES[@]} -eq 0 ]]; then
++    MACOS_PREFERENCES_BACKUP=false
+   fi
+ }
+ 
+ # ─────────────────────────────────────────────────────────────
+-### Step 9: Xcode Command Line Tools
++### Step 10: Xcode Command Line Tools
+ # ─────────────────────────────────────────────────────────────
+ 
+-_step9_xcode() {
+-  log_step "Step 9: Xcode Command Line Tools"
++_step10_xcode() {
++  log_step "Step 10: Xcode Command Line Tools"
+ 
+   gum_style --foreground 240 \
+     "These tools are required for Homebrew, Git, and many developer tools. Recommended for all users."
+ 
+   if gum_confirm --prompt "Include xcode-select --install in install.sh?"; then
+     XCODE=true
+   fi
+ }
+ 
+ # ─────────────────────────────────────────────────────────────
+-### Step 10: Telemetry & Analytics
++### Step 11: Telemetry & Analytics
+ # ─────────────────────────────────────────────────────────────
+ 
+-_step10_telemetry() {
+-  log_step "Step 10: Telemetry & Analytics"
++_step11_telemetry() {
++  log_step "Step 11: Telemetry & Analytics"
+ 
+   gum_style --foreground 240 \
+     "Disable data collection for Homebrew, Go, GitHub CLI, Bun, npm, pnpm, and Deno. Recommended for privacy."
+ 
+   if gum_confirm --prompt "Disable telemetry and analytics in generated scripts?"; then
+     TELEMETRY=true
+   fi
+ }
+ 
+ # ─────────────────────────────────────────────────────────────
+-### Step 11: Generate Repository
++### Step 12: Generate Repository
+ # ─────────────────────────────────────────────────────────────
+ 
+-_step11_collect() {
+-  log_step "Step 11: Prepare Repository Generation"
++_step12_collect() {
++  log_step "Step 12: Prepare Repository Generation"
+ 
+   _write_selections_json "$SELECTIONS_FILE"
+ 
+   log_ok "Selections saved to $SELECTIONS_FILE"
+ 
+   gum_style --foreground 240 "Summary:"
+   log_info "Apps:      ${#SELECTED_APPS[@]}"
+   log_info "Agents:    ${#SELECTED_AGENTS[@]}"
+   log_info "Formulae:  ${#SELECTED_FORMULAE[@]}"
+   log_info "Taps:      ${#SELECTED_TAPS[@]}"
+   log_info "npm:       ${#SELECTED_NPM[@]}"
+   log_info "Dotfiles:  ${#SELECTED_DOTFILES[@]}"
+   log_info "VS Code:   $EDITOR_VSCODE"
+   log_info "Cursor:    $EDITOR_CURSOR"
+   log_info "Dock:      backup=$DOCK_BACKUP, defaults=$DOCK_DEFAULTS"
++  log_info "macOS:     backup=$MACOS_PREFERENCES_BACKUP (${#SELECTED_MACOS_PREFERENCES[@]} categories)"
+   log_info "Xcode CLI: $XCODE"
+   log_info "Telemetry: $TELEMETRY"
+ }
+ 
+ # ─────────────────────────────────────────────────────────────
+-### Step 12: GitHub Backup
++### Step 13: GitHub Backup
+ # ─────────────────────────────────────────────────────────────
+ 
+-_step12_github() {
+-  log_step "Step 12: GitHub Backup"
++_step13_github() {
++  log_step "Step 13: GitHub Backup"
+ 
+   if command -v gh >/dev/null 2>&1; then
+     if gh auth status >/dev/null 2>&1; then
+       log_ok "GitHub CLI authenticated."
+     else
+       log_warn "GitHub CLI is not authenticated."
+       if gum_confirm --prompt "Run gh auth login now?"; then
+         gh auth login
+       fi
+     fi
+@@ -713,36 +797,39 @@ wizard_start() {
+   _require_wizard_runtime
+   gum_ensure
+ 
+   # Reset selections for idempotency
+   SELECTED_APPS=()
+   SELECTED_AGENTS=()
+   SELECTED_FORMULAE=()
+   SELECTED_TAPS=()
+   SELECTED_NPM=()
+   SELECTED_DOTFILES=()
++  SELECTED_MACOS_PREFERENCES=()
+   EDITOR_VSCODE=false
+   EDITOR_CURSOR=false
+   DOCK_BACKUP=false
+   DOCK_DEFAULTS=false
++  MACOS_PREFERENCES_BACKUP=false
+   XCODE=false
+   TELEMETRY=false
+   GITHUB_REPO="dotfiles"
+   GITHUB_PRIVATE=true
+ 
+   _step0_welcome_and_discovery
+   _step1_apps
+   _step2_agents
+   _step3_formulae
+   _step4_taps
+   _step5_npm
+   _step6_dotfiles
+   _step7_editors
+   _step8_dock
+-  _step9_xcode
+-  _step10_telemetry
+-  _step11_collect
+-  _step12_github
++  _step9_macos_defaults
++  _step10_xcode
++  _step11_telemetry
++  _step12_collect
++  _step13_github
+ 
+   log_ok "Wizard complete!"
+   gum_style --foreground 240 "Your selections are ready for code generation."
+ }
+diff --git a/templates/install.sh b/templates/install.sh
+index 4d2d073..0c9695b 100644
+--- a/templates/install.sh
++++ b/templates/install.sh
+@@ -238,20 +238,23 @@ phase_apps() {
+ # ─────────────────────────────────────────────────────────────
+ # Phase 4: Final Setup (dock, defaults, telemetry)
+ # ─────────────────────────────────────────────────────────────
+ 
+ phase_final() {
+   log_step "Phase 4: Final Setup"
+ 
+   # Dock restore
+   {{DOCK_BLOCK}}
+ 
++  # macOS defaults
++  {{MACOS_DEFAULTS_BLOCK}}
++
+   # Default app associations
+   {{DUTI_BLOCK}}
+ 
+   # Telemetry
+   {{TELEMETRY_BLOCK}}
+ 
+   # coreutils sha256sum symlink
+   if command -v gsha256sum >/dev/null 2>&1 && ! command -v sha256sum >/dev/null 2>&1; then
+     local bp; bp="$(brew_prefix)"
+     if [[ "$DRY_RUN" == "true" ]]; then
+diff --git a/tests/generate_regressions.sh b/tests/generate_regressions.sh
+index 67a1ab1..d1989b2 100644
+--- a/tests/generate_regressions.sh
++++ b/tests/generate_regressions.sh
+@@ -1,14 +1,14 @@
+ #!/usr/bin/env bash
+ set -euo pipefail
+ 
+-PROJECT_ROOT="/Users/shreyasgupta/local-documents/dotfriend"
++PROJECT_ROOT="${PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+ TEST_DIR="$(mktemp -d)"
+ 
+ PASS=0
+ FAIL=0
+ 
+ ok() {
+   printf '  ✅ %s\n' "$1"
+   ((PASS++)) || true
+ }
+ 
+@@ -432,23 +432,95 @@ EOF
+     ok "install.sh avoids full cursor root rsync"
+   fi
+ 
+   if [[ -f "${repo_dir}/README.md" && -f "${repo_dir}/.dotfriend/agent-tools.json" && -f "${repo_dir}/.dotfriend/selections.json" ]]; then
+     ok "generated repo includes readme and metadata"
+   else
+     ko "generated repo includes readme and metadata" "missing README.md or .dotfriend metadata"
+   fi
+ }
+ 
++test_macos_preferences_backup() {
++  setup_case "macos_preferences"
++  cat > "${DOTFRIEND_CACHE_DIR}/selections.json" <<'EOF'
++{
++  "apps": [],
++  "agents": [],
++  "formulae": [],
++  "taps": [],
++  "npm_globals": [],
++  "dotfiles": [],
++  "config_dirs": [],
++  "editors": {"vscode": false, "cursor": false},
++  "dock": {"backup": false, "defaults": false},
++  "macos_preferences": {
++    "backup": true,
++    "categories": ["global_ui", "keyboard_shortcuts", "default_apps", "network", "security_privacy"]
++  },
++  "xcode": false,
++  "telemetry": false,
++  "github": {"repo_name": "dotfiles", "private": true}
++}
++EOF
++
++  source_generator
++
++  local repo_dir="${TEST_DIR}/macos_preferences/out"
++  if generate_repo "$repo_dir" false >/dev/null 2>&1; then
++    ok "macOS preferences repo generation succeeds"
++  else
++    ko "macOS preferences repo generation succeeds" "generate_repo failed"
++    return
++  fi
++
++  if [[ -f "${repo_dir}/macos/defaults/com.apple.symbolichotkeys.plist" ]]; then
++    ok "keyboard shortcut preferences are backed up"
++  else
++    ko "keyboard shortcut preferences are backed up" "missing com.apple.symbolichotkeys.plist"
++  fi
++
++  if [[ -f "${repo_dir}/macos/default-apps.duti" ]]; then
++    ok "default app associations are exported for duti"
++  else
++    ko "default app associations are exported for duti" "missing default-apps.duti"
++  fi
++
++  if grep -q 'brew "duti"' "${repo_dir}/Brewfile"; then
++    ok "duti is included when default apps are selected"
++  else
++    ko "duti is included when default apps are selected" "missing Brewfile helper"
++  fi
++
++  if grep -q 'duti -s "\$bundle" "\$handler"' "${repo_dir}/install.sh"; then
++    ok "install.sh restores default apps with duti"
++  else
++    ko "install.sh restores default apps with duti" "missing duti restore loop"
++  fi
++
++  if [[ -f "${repo_dir}/macos/reports/network.txt" && -f "${repo_dir}/macos/reports/security-privacy.txt" ]]; then
++    ok "report-only macOS settings are captured"
++  else
++    ko "report-only macOS settings are captured" "missing network or security report"
++  fi
++
++  if [[ -f "${repo_dir}/macos/defaults/NSGlobalDomain.plist" ]] &&
++    /usr/libexec/PlistBuddy -c "Print :NSUserDictionaryReplacementItems" "${repo_dir}/macos/defaults/NSGlobalDomain.plist" >/dev/null 2>&1; then
++    ko "cloud-backed text replacements are skipped" "NSUserDictionaryReplacementItems was present"
++  else
++    ok "cloud-backed text replacements are skipped"
++  fi
++}
++
+ printf '\n1. Generation regressions\n'
+ test_repo_name_and_github_push
+ test_agent_and_shared_config_copy
+ test_filtered_recursive_copy_and_layout
+ test_cursor_extension_manifest_and_metadata
++test_macos_preferences_backup
+ 
+ printf '\n========================================\n'
+ printf 'Results: %d passed, %d failed\n' "$PASS" "$FAIL"
+ printf '========================================\n'
+ 
+ if [[ "$FAIL" -gt 0 ]]; then
+   exit 1
+ fi
+diff --git a/tests/verify_fixes.sh b/tests/verify_fixes.sh
+index e762f08..39294dc 100755
+--- a/tests/verify_fixes.sh
++++ b/tests/verify_fixes.sh
+@@ -1,15 +1,15 @@
+ #!/usr/bin/env bash
+ # Verification script for dotfriend fixes
+ set -euo pipefail
+ 
+-PROJECT="/Users/shreyasgupta/local-documents/dotfriend"
++PROJECT="${PROJECT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+ TEST_DIR="$(mktemp -d)"
+ export HOME="$TEST_DIR"
+ export DOTFRIEND_CACHE_DIR="${HOME}/.cache/dotfriend"
+ mkdir -p "$DOTFRIEND_CACHE_DIR"
+ 
+ cd "$PROJECT"
+ 
+ PASS=0
+ FAIL=0
+ 

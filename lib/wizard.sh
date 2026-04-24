@@ -636,7 +636,7 @@ _step9_macos_defaults() {
   log_step "Step 9: macOS Defaults"
 
   gum_style --foreground 240 \
-    "Recommended backs up Apple/system preferences like Finder, Dock settings, keyboard shortcuts, input devices, menu bar, screenshots, default apps, accessibility, network/power reports, and Apple app preferences. It skips cloud-backed text replacements, fonts, and third-party app preferences."
+    "Recommended backs up every dotfriend-supported macOS category: Finder, Dock settings, keyboard shortcuts, input devices, menu bar, screenshots, accessibility, default apps, Apple app preferences, and system reports for network, power, security, printing, and Time Machine. It skips cloud-backed text replacements, fonts, third-party app preferences, and credential-adjacent Passwords preferences."
 
   local choice
   choice="$(gum_choose \
@@ -657,7 +657,7 @@ _step9_macos_defaults() {
   if [[ "$choice" == "Backup recommended settings" ]]; then
     while IFS= read -r id; do
       [[ -n "$id" ]] && SELECTED_MACOS_PREFERENCES+=("$id")
-    done < <(macos_preference_category_ids)
+    done < <(macos_recommended_preference_category_ids)
     return 0
   fi
 

@@ -454,13 +454,83 @@ test_macos_preferences_backup() {
   "dock": {"backup": false, "defaults": false},
   "macos_preferences": {
     "backup": true,
-    "categories": ["global_ui", "keyboard_shortcuts", "default_apps", "network", "security_privacy"]
+    "categories": ["global_ui", "dock", "keyboard_shortcuts", "default_apps", "network", "security_privacy"]
   },
   "xcode": false,
   "telemetry": false,
   "github": {"repo_name": "dotfiles", "private": true}
 }
 EOF
+
+  local bin_dir="${TEST_DIR}/macos_preferences/bin"
+  mkdir -p "$bin_dir"
+  cat > "${bin_dir}/defaults" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" != "export" ]]; then
+  exit 1
+fi
+domain="$2"
+out="$3"
+if [[ "$domain" == "com.apple.LaunchServices/com.apple.launchservices.secure" ]]; then
+  cat > "$out" <<'JSON'
+{"LSHandlers":[
+  {"LSHandlerContentType":"public.text","LSHandlerRoleViewer":"com.example.viewer","LSHandlerRoleEditor":"com.example.editor"},
+  {"LSHandlerURLScheme":"https","LSHandlerRoleAll":"com.example.browser"}
+]}
+JSON
+elif [[ "$domain" == "NSGlobalDomain" ]]; then
+  cat > "$out" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict><key>NSUserDictionaryReplacementItems</key><array><dict><key>replace</key><string>aa</string><key>with</key><string>secret</string></dict></array></dict></plist>
+PLIST
+elif [[ "$domain" == "com.apple.dock" ]]; then
+  cat > "$out" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict><key>persistent-apps</key><array><string>Mail</string></array><key>tilesize</key><integer>44</integer></dict></plist>
+PLIST
+else
+  cat > "$out" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict><key>enabled</key><true/></dict></plist>
+PLIST
+fi
+EOF
+  cat > "${bin_dir}/plutil" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+out=""
+in=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    -convert) shift 2 ;;
+    *) in="$1"; shift ;;
+  esac
+done
+cp "$in" "$out"
+EOF
+  cat > "${bin_dir}/scutil" <<'EOF'
+#!/usr/bin/env bash
+printf 'test-mac\n'
+EOF
+  cat > "${bin_dir}/networksetup" <<'EOF'
+#!/usr/bin/env bash
+printf 'Wi-Fi\n'
+EOF
+  cat > "${bin_dir}/spctl" <<'EOF'
+#!/usr/bin/env bash
+printf 'assessments enabled\n'
+EOF
+  cat > "${bin_dir}/fdesetup" <<'EOF'
+#!/usr/bin/env bash
+printf 'FileVault is On.\n'
+EOF
+  chmod +x "${bin_dir}"/*
+  PATH="${bin_dir}:${PATH}"
 
   source_generator
 
@@ -484,6 +554,14 @@ EOF
     ko "default app associations are exported for duti" "missing default-apps.duti"
   fi
 
+  if grep -q $'com.example.viewer\tpublic.text\tviewer' "${repo_dir}/macos/default-apps.duti" &&
+    grep -q $'com.example.editor\tpublic.text\teditor' "${repo_dir}/macos/default-apps.duti" &&
+    grep -q $'com.example.browser\thttps\tall' "${repo_dir}/macos/default-apps.duti"; then
+    ok "default app associations preserve LaunchServices roles"
+  else
+    ko "default app associations preserve LaunchServices roles" "missing role-specific duti rows"
+  fi
+
   if grep -q 'brew "duti"' "${repo_dir}/Brewfile"; then
     ok "duti is included when default apps are selected"
   else
@@ -494,6 +572,13 @@ EOF
     ok "install.sh restores default apps with duti"
   else
     ko "install.sh restores default apps with duti" "missing duti restore loop"
+  fi
+
+  if grep -q 'restored_any=false' "${repo_dir}/install.sh" &&
+    grep -q '\[\[ "\$restored_any" == "true" && "\$DRY_RUN" != "true" \]\]' "${repo_dir}/install.sh"; then
+    ok "install.sh avoids UI restarts for dry-run or no-op macOS restores"
+  else
+    ko "install.sh avoids UI restarts for dry-run or no-op macOS restores" "missing restored_any/DRY_RUN guard"
   fi
 
   if [[ -f "${repo_dir}/macos/reports/network.txt" && -f "${repo_dir}/macos/reports/security-privacy.txt" ]]; then
@@ -507,6 +592,13 @@ EOF
     ko "cloud-backed text replacements are skipped" "NSUserDictionaryReplacementItems was present"
   else
     ok "cloud-backed text replacements are skipped"
+  fi
+
+  if [[ -f "${repo_dir}/macos/defaults/com.apple.dock.plist" ]] &&
+    /usr/libexec/PlistBuddy -c "Print :persistent-apps" "${repo_dir}/macos/defaults/com.apple.dock.plist" >/dev/null 2>&1; then
+    ko "Dock preference backup excludes app layout" "persistent-apps was present"
+  else
+    ok "Dock preference backup excludes app layout"
   fi
 }
 

@@ -1,0 +1,23 @@
+{
+  "reviewer": "project-standards",
+  "findings": [
+    {
+      "title": "AGENTS handoff omits new macOS preferences implementation surface",
+      "severity": "P3",
+      "file": "AGENTS.md",
+      "line": 7,
+      "confidence": 0.72,
+      "autofix_class": "safe_auto",
+      "owner": "review-fixer",
+      "requires_verification": false,
+      "pre_existing": false,
+      "suggested_fix": "Add `lib/macos_preferences.sh` to the High-Value Files table and add a Task Map row for changing macOS preference backup/restore behavior, pointing to `lib/macos_preferences.sh`, `lib/wizard.sh`, `lib/generate.sh`, and `templates/install.sh` as appropriate."
+    }
+  ],
+  "residual_risks": [
+    "Review was limited to project standards in AGENTS.md; macOS defaults semantics, privacy coverage, and restore correctness were not reviewed here."
+  ],
+  "testing_gaps": [
+    "AGENTS.md requires `./tests/verify_fixes.sh` after changes in `lib/` or `templates/` and `./tests/generate_regressions.sh` after generation/template changes; no test run evidence was present in the scoped artifact, and this read-only persona did not execute tests."
+  ]
+}

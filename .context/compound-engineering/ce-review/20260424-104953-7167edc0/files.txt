@@ -1,0 +1,9 @@
+AGENTS.md
+README.md
+lib/bootstrap.sh
+lib/generate.sh
+lib/macos_preferences.sh
+lib/wizard.sh
+templates/install.sh
+tests/generate_regressions.sh
+tests/verify_fixes.sh

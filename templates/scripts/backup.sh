@@ -8,6 +8,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+if [[ -f "${SCRIPT_DIR}/lib/macos_preferences.sh" ]]; then
+  # shellcheck source=lib/macos_preferences.sh
+  source "${SCRIPT_DIR}/lib/macos_preferences.sh"
+fi
+
 # ─────────────────────────────────────────────────────────────
 # Defaults
 # ─────────────────────────────────────────────────────────────
@@ -68,6 +73,7 @@ dry_warn() {
 has_brew() { command -v brew >/dev/null 2>&1; }
 has_npm()  { command -v npm >/dev/null 2>&1; }
 has_git()  { command -v git >/dev/null 2>&1; }
+ensure_dir() { [[ -d "$1" ]] || mkdir -p "$1"; }
 
 agent_tools_file() {
   local agents_file="${REPO_ROOT}/.dotfriend/agent-tools.json"
@@ -89,6 +95,20 @@ selected_agent_ids() {
   if [[ -f "$agents_file" ]] && command -v jq >/dev/null 2>&1; then
     jq -r '.agentic_tools[].id' "$agents_file" 2>/dev/null || true
   fi
+}
+
+selected_macos_preference_categories() {
+  local selections_file="${REPO_ROOT}/.dotfriend/selections.json"
+  if [[ ! -f "$selections_file" ]] || ! command -v jq >/dev/null 2>&1; then
+    return 0
+  fi
+
+  jq -r '
+    ([.macos_preferences.categories[]?] +
+      (if (.dock.defaults // false) then ["default_apps"] else [] end))
+    | unique
+    | .[]
+  ' "$selections_file" 2>/dev/null || true
 }
 
 run_cmd() {
@@ -414,7 +434,42 @@ sync_dotfiles() {
 }
 
 # ─────────────────────────────────────────────────────────────
-# 6. Diff summary
+# 7. Sync macOS preferences
+# ─────────────────────────────────────────────────────────────
+
+sync_macos_preferences() {
+  log_step "Syncing macOS preferences"
+
+  if ! type backup_macos_preferences >/dev/null 2>&1; then
+    log_warn "macOS preference helper not found, skipping macOS preferences"
+    return 0
+  fi
+
+  local -a categories=()
+  local category
+  while IFS= read -r category; do
+    [[ -n "$category" ]] && categories+=("$category")
+  done < <(selected_macos_preference_categories)
+
+  if [[ ${#categories[@]} -eq 0 ]]; then
+    log_info "No macOS preference categories selected"
+    return 0
+  fi
+
+  if [[ "$DRY_RUN" == true ]]; then
+    printf "${C_DIM}   would refresh: %s${C_RESET}\n" "${REPO_ROOT}/macos/"
+    CHANGES_MADE=true
+    return 0
+  fi
+
+  rm -rf "${REPO_ROOT:?}/macos/defaults" "${REPO_ROOT:?}/macos/reports" "${REPO_ROOT:?}/macos/default-apps.duti" "${REPO_ROOT:?}/macos/manifest.json"
+  backup_macos_preferences "${REPO_ROOT}/macos" "${categories[@]}"
+  CHANGES_MADE=true
+  log_ok "macOS preferences updated"
+}
+
+# ─────────────────────────────────────────────────────────────
+# 8. Diff summary
 # ─────────────────────────────────────────────────────────────
 
 show_diff() {
@@ -445,7 +500,7 @@ show_diff() {
 }
 
 # ─────────────────────────────────────────────────────────────
-# 7. Auto-commit
+# 9. Auto-commit
 # ─────────────────────────────────────────────────────────────
 
 auto_commit() {
@@ -500,6 +555,7 @@ sync_npm
 sync_editor_extensions
 sync_agents
 sync_dotfiles
+sync_macos_preferences
 show_diff
 auto_commit
 

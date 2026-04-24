@@ -30,10 +30,43 @@ MACOS_PREFERENCE_CATEGORIES=(
   "apple_apps|Apple app-specific preferences"
 )
 
+MACOS_RECOMMENDED_PREFERENCE_CATEGORIES=(
+  global_ui
+  dock
+  finder
+  input_devices
+  keyboard_shortcuts
+  mission_control
+  menu_bar
+  screenshots
+  wallpaper_screensaver
+  accessibility
+  notifications_focus
+  spotlight_siri
+  default_apps
+  login_items
+  energy
+  network
+  sharing
+  security_privacy
+  software_update
+  time_machine
+  printers
+  services_extensions
+  apple_apps
+)
+
 macos_preference_category_ids() {
   local item
   for item in "${MACOS_PREFERENCE_CATEGORIES[@]}"; do
     printf '%s\n' "${item%%|*}"
+  done
+}
+
+macos_recommended_preference_category_ids() {
+  local item
+  for item in "${MACOS_RECOMMENDED_PREFERENCE_CATEGORIES[@]}"; do
+    printf '%s\n' "$item"
   done
 }
 
@@ -145,7 +178,6 @@ macos_preference_domains_for_category() {
         com.apple.MobileSMS \
         com.apple.Music \
         com.apple.Notes \
-        com.apple.Passwords \
         com.apple.Photos \
         com.apple.Preview \
         com.apple.QuickTimePlayerX \
@@ -177,6 +209,12 @@ _macos_export_domain() {
   if [[ "$domain" == "NSGlobalDomain" || "$domain" == ".GlobalPreferences" ]]; then
     /usr/libexec/PlistBuddy -c "Delete :NSUserDictionaryReplacementItems" "$file" >/dev/null 2>&1 || true
   fi
+
+  if [[ "$domain" == "com.apple.dock" ]]; then
+    /usr/libexec/PlistBuddy -c "Delete :persistent-apps" "$file" >/dev/null 2>&1 || true
+    /usr/libexec/PlistBuddy -c "Delete :persistent-others" "$file" >/dev/null 2>&1 || true
+    /usr/libexec/PlistBuddy -c "Delete :recent-apps" "$file" >/dev/null 2>&1 || true
+  fi
 }
 
 _macos_write_report() {
@@ -201,15 +239,22 @@ _macos_backup_default_apps() {
     plutil -convert json -o "$json" "$plist" >/dev/null 2>&1 &&
     command -v jq >/dev/null 2>&1; then
     jq -r '
+      def rows:
+        . as $item |
+        ($item.LSHandlerContentType // $item.LSHandlerURLScheme) as $handler |
+        select($handler != null) |
+        [
+          ["LSHandlerRoleAll", "all"],
+          ["LSHandlerRoleViewer", "viewer"],
+          ["LSHandlerRoleEditor", "editor"],
+          ["LSHandlerRoleShell", "shell"]
+        ][] as $role |
+        select($item[$role[0]] != null) |
+        [$item[$role[0]], $handler, $role[1]];
       .LSHandlers // []
-      | map(select(.LSHandlerRoleAll? and (.LSHandlerContentType? or .LSHandlerURLScheme?)))
-      | unique_by([.LSHandlerRoleAll, (.LSHandlerContentType // .LSHandlerURLScheme)])
+      | map(rows)
+      | unique
       | .[]
-      | [
-          .LSHandlerRoleAll,
-          (.LSHandlerContentType // .LSHandlerURLScheme),
-          "all"
-        ]
       | @tsv
     ' "$json" > "$rules" 2>/dev/null || true
   fi

@@ -477,13 +477,14 @@ _generate_readme_md() {
     printf '```bash\n'
     printf './scripts/backup.sh --commit\n'
     printf '```\n\n'
-    printf '%s\n\n' "This sync flow updates the generated repo content that dotfriend tracks, including your Brewfile, npm globals, tracked dotfiles/configs, selected agent configs, and VS Code/Cursor extension ID lists."
+    printf '%s\n\n' "This sync flow updates the generated repo content that dotfriend tracks, including your Brewfile, npm globals, tracked dotfiles/configs, selected agent configs, VS Code/Cursor extension ID lists, and selected macOS preference artifacts."
     printf '%s\n\n' "## What Gets Restored"
     printf '%s\n' '- Homebrew taps, formulae, casks, and Mac App Store apps from `Brewfile`'
     printf '%s\n' '- Global npm packages from `npm-global.txt`'
     printf '%s\n' '- Tracked shell dotfiles and app config directories'
     printf '%s\n' '- Selected agent config files and managed subdirectories'
-    printf '%s\n\n' '- VS Code and Cursor extensions from `vscode/extensions.txt` and `cursor/extensions.txt`'
+    printf '%s\n' '- VS Code and Cursor extensions from `vscode/extensions.txt` and `cursor/extensions.txt`'
+    printf '%s\n\n' '- Selected macOS preferences from `macos/defaults/`, `macos/default-apps.duti`, and `macos/reports/`'
     printf '%s\n\n' "## Useful Commands"
     printf '```bash\n'
     printf './install.sh\n'
@@ -663,6 +664,7 @@ _build_macos_defaults_block() {
     if [[ "$backup" == "true" ]]; then
       printf '  if [[ -d "$DOTFILES_DIR/macos/defaults" ]]; then\n'
       printf '    log_info "Restoring macOS defaults..."\n'
+      printf '    restored_any=false\n'
       printf '    while IFS= read -r plist; do\n'
       printf '      [[ -f "$plist" ]] || continue\n'
       printf '      domain="$(basename "$plist" .plist)"\n'
@@ -672,11 +674,14 @@ _build_macos_defaults_block() {
       printf '      else\n'
       printf '        soft_run defaults import "$domain" "$plist" || true\n'
       printf '      fi\n'
+      printf '      restored_any=true\n'
       printf '    done < <(find "$DOTFILES_DIR/macos/defaults" -maxdepth 1 -name "*.plist" -print 2>/dev/null | sort)\n'
-      printf '    killall cfprefsd 2>/dev/null || true\n'
-      printf '    killall Finder 2>/dev/null || true\n'
-      printf '    killall Dock 2>/dev/null || true\n'
-      printf '    killall SystemUIServer 2>/dev/null || true\n'
+      printf '    if [[ "$restored_any" == "true" && "$DRY_RUN" != "true" ]]; then\n'
+      printf '      killall cfprefsd 2>/dev/null || true\n'
+      printf '      killall Finder 2>/dev/null || true\n'
+      printf '      killall Dock 2>/dev/null || true\n'
+      printf '      killall SystemUIServer 2>/dev/null || true\n'
+      printf '    fi\n'
       printf '  fi\n'
     fi
   fi
@@ -923,6 +928,9 @@ _copy_macos_preferences() {
   [[ ${#categories[@]} -gt 0 ]] || return 0
 
   log_info "Backing up macOS preferences..."
+  if [[ -d "${GEN_DIR}/macos" ]]; then
+    rm -rf "${GEN_DIR:?}/macos/defaults" "${GEN_DIR:?}/macos/reports" "${GEN_DIR:?}/macos/default-apps.duti" "${GEN_DIR:?}/macos/manifest.json"
+  fi
   backup_macos_preferences "${GEN_DIR}/macos" "${categories[@]}"
   log_ok "macOS preferences saved"
 }
@@ -943,6 +951,7 @@ _copy_scripts() {
 
   # Also ensure lib dir exists
   ensure_dir "${dest_dir}/lib"
+  cp "${SCRIPT_DIR}/macos_preferences.sh" "${dest_dir}/lib/macos_preferences.sh"
 
   chmod -R +x "${dest_dir}"/*.sh 2>/dev/null || true
   log_ok "Scripts copied"
