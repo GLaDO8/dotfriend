@@ -2,11 +2,8 @@ name: Publish Package to npmjs
 
 on:
   push:
-    branches:
-      - main
-    paths:
-      - package.json
-  workflow_dispatch:
+    tags:
+      - "v*"
 
 permissions:
   contents: read
@@ -28,37 +25,23 @@ jobs:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
 
-      - name: Check package version changed
-        id: version_changed
+      - name: Check tag matches package version
         shell: bash
         run: |
-          if [[ "${{ github.event_name }}" == "push" && "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]]; then
-            base_ref="${{ github.event.before }}"
-          elif git rev-parse HEAD^ >/dev/null 2>&1; then
-            base_ref="HEAD^"
-          else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "No previous commit found; skipping npm publish."
-            exit 0
-          fi
-
-          previous_version="$(git show "${base_ref}:package.json" 2>/dev/null | node -e "let input=''; process.stdin.on('data', d => input += d); process.stdin.on('end', () => console.log(JSON.parse(input).version));" || true)"
           current_version="$(node -p "require('./package.json').version")"
+          tag_version="${GITHUB_REF_NAME#v}"
 
-          if [[ -n "$previous_version" && "$previous_version" != "$current_version" ]]; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "package.json version changed: ${previous_version} -> ${current_version}"
-          else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "package.json version did not change; skipping npm publish."
+          if [[ "$tag_version" != "$current_version" ]]; then
+            echo "Release tag v${tag_version} does not match package.json version ${current_version}." >&2
+            exit 1
           fi
+
+          echo "Publishing package.json version ${current_version} from tag ${GITHUB_REF_NAME}."
 
       - name: Check package contents
-        if: steps.version_changed.outputs.changed == 'true'
         run: npm pack --dry-run
 
       - name: Check published version
-        if: steps.version_changed.outputs.changed == 'true'
         id: published
         shell: bash
         run: |
@@ -74,7 +57,7 @@ jobs:
           fi
 
       - name: Publish to npm
-        if: steps.version_changed.outputs.changed == 'true' && steps.published.outputs.already_published == 'false'
+        if: steps.published.outputs.already_published == 'false'
         run: npm publish --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
