@@ -1,0 +1,25 @@
+{
+  "reviewer": "security",
+  "findings": [
+    {
+      "title": "Recommended backup includes Passwords app preferences",
+      "severity": "P2",
+      "file": "lib/macos_preferences.sh",
+      "line": 148,
+      "confidence": 0.68,
+      "autofix_class": "manual",
+      "owner": "downstream-resolver",
+      "requires_verification": true,
+      "pre_existing": false,
+      "suggested_fix": "Remove com.apple.Passwords from the recommended apple_apps domain list, or move credential-adjacent Apple app domains behind a custom-only opt-in with an explicit privacy warning. Add a regression that recommended macOS preference backup does not export com.apple.Passwords.plist."
+    }
+  ],
+  "residual_risks": [
+    "Several intentionally supported report categories can still place privacy-sensitive local metadata into a dotfiles repo, including host names, hardware port details, Time Machine destination details, printer URIs, and login/background-item entries. This appears aligned with the stated feature intent, but users should understand the generated repo may contain machine-identifying data before making it public.",
+    "The review did not inspect live exported plist contents because the request was scoped to read-only checkout review; exact secret/PII presence may vary by macOS version and local user state."
+  ],
+  "testing_gaps": [
+    "No regression asserts that recommended macOS preferences exclude credential-adjacent domains such as com.apple.Passwords.",
+    "No fixture validates that generated macOS reports avoid credentials or tokens embedded in service URLs, backup destinations, or printer configuration output."
+  ]
+}

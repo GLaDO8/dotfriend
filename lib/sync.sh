@@ -13,6 +13,10 @@ source "${SCRIPT_DIR}/gum.sh"
 if [[ -f "${SCRIPT_DIR}/discovery.sh" ]]; then
   source "${SCRIPT_DIR}/discovery.sh"
 fi
+# shellcheck source=macos_preferences.sh
+if [[ -f "${SCRIPT_DIR}/macos_preferences.sh" ]]; then
+  source "${SCRIPT_DIR}/macos_preferences.sh"
+fi
 
 # ─────────────────────────────────────────────────────────────
 # State / flags
@@ -660,6 +664,53 @@ sync_agents() {
 }
 
 # ─────────────────────────────────────────────────────────────
+# macOS preference sync
+# ─────────────────────────────────────────────────────────────
+
+_selected_macos_preference_categories() {
+  local selections_file="${REPO_DIR}/.dotfriend/selections.json"
+  if [[ ! -f "$selections_file" ]] || ! command -v jq >/dev/null 2>&1; then
+    return 0
+  fi
+
+  jq -r '
+    ([.macos_preferences.categories[]?] +
+      (if (.dock.defaults // false) then ["default_apps"] else [] end))
+    | unique
+    | .[]
+  ' "$selections_file" 2>/dev/null || true
+}
+
+sync_macos_preferences() {
+  log_step "macOS Preference Sync"
+
+  if ! type backup_macos_preferences >/dev/null 2>&1; then
+    log_warn "macOS preference helper not available. Skipping."
+    return 0
+  fi
+
+  local -a categories=()
+  local category
+  while IFS= read -r category; do
+    [[ -n "$category" ]] && categories+=("$category")
+  done < <(_selected_macos_preference_categories)
+
+  if [[ ${#categories[@]} -eq 0 ]]; then
+    log_info "No macOS preference categories selected. Skipping."
+    return 0
+  fi
+
+  if [[ "$DRY_RUN" == true ]]; then
+    gum_style --foreground "#F1FA8C" "  [dry-run] Would refresh macOS preference artifacts (${#categories[@]} categories)"
+    return 0
+  fi
+
+  rm -rf "${REPO_DIR:?}/macos/defaults" "${REPO_DIR:?}/macos/reports" "${REPO_DIR:?}/macos/default-apps.duti" "${REPO_DIR:?}/macos/manifest.json"
+  backup_macos_preferences "${REPO_DIR}/macos" "${categories[@]}"
+  log_ok "macOS preference artifacts refreshed"
+}
+
+# ─────────────────────────────────────────────────────────────
 # Diff summary
 # ─────────────────────────────────────────────────────────────
 
@@ -793,10 +844,13 @@ cmd_sync() {
   # 6. Agent sync
   sync_agents
 
-  # 7. Show diff summary
+  # 7. macOS preference sync
+  sync_macos_preferences
+
+  # 8. Show diff summary
   show_diff_summary
 
-  # 8. Optional commit
+  # 9. Optional commit
   prompt_commit
 
   log_ok "Sync complete."

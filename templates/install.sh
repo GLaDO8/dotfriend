@@ -245,6 +245,9 @@ phase_final() {
   # Dock restore
   {{DOCK_BLOCK}}
 
+  # macOS defaults
+  {{MACOS_DEFAULTS_BLOCK}}
+
   # Default app associations
   {{DUTI_BLOCK}}
 

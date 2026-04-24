@@ -1,0 +1,38 @@
+{
+  "reviewer": "correctness",
+  "findings": [
+    {
+      "title": "Recommended macOS backup selects every available category",
+      "severity": "P2",
+      "file": "lib/wizard.sh",
+      "line": 660,
+      "confidence": 0.78,
+      "autofix_class": "gated_auto",
+      "owner": "downstream-resolver",
+      "requires_verification": true,
+      "pre_existing": false,
+      "suggested_fix": "Add an explicit recommended category list matching the product intent and prompt text, then use that list for \"Backup recommended settings\". Keep `macos_preference_category_ids` for the custom picker so users can opt into broader categories such as wallpaper, notifications, Spotlight/Siri, sharing, software update, services/extensions, and login items."
+    },
+    {
+      "title": "duti export drops role-specific LaunchServices handlers",
+      "severity": "P2",
+      "file": "lib/macos_preferences.sh",
+      "line": 205,
+      "confidence": 0.73,
+      "autofix_class": "manual",
+      "owner": "downstream-resolver",
+      "requires_verification": true,
+      "pre_existing": false,
+      "suggested_fix": "Export all supported LaunchServices role keys, not only `LSHandlerRoleAll`. For each handler, emit one duti rule for each present role key (`LSHandlerRoleAll` -> `all`, `LSHandlerRoleViewer` -> `viewer`, `LSHandlerRoleEditor` -> `editor`, `LSHandlerRoleShell` -> `shell`) paired with the content type or URL scheme, and add a regression fixture covering a handler that only has viewer/editor."
+    }
+  ],
+  "residual_risks": [
+    "macOS defaults restore was validated through generation tests, but not by importing onto a clean macOS account.",
+    "The generated duti restore loop was not exercised against a real `duti` binary in this environment."
+  ],
+  "testing_gaps": [
+    "No fixture asserts the exact category IDs chosen by the recommended macOS preferences path.",
+    "No LaunchServices fixture covers role-specific handlers without `LSHandlerRoleAll`.",
+    "`./tests/verify_fixes.sh` and `bash ./tests/generate_regressions.sh` passed; direct `./tests/generate_regressions.sh` failed because the file is not executable."
+  ]
+}

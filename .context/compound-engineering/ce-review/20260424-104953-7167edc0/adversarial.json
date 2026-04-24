@@ -1,0 +1,41 @@
+{
+  "reviewer": "ce:review-adversarial",
+  "findings": [
+    {
+      "title": "Regeneration leaves stale macOS defaults that are restored anyway",
+      "severity": "P1",
+      "file": "lib/generate.sh",
+      "line": 926,
+      "confidence": 0.86,
+      "autofix_class": "gated_auto",
+      "owner": "downstream-resolver",
+      "requires_verification": true,
+      "pre_existing": false,
+      "suggested_fix": "Before backing up macOS preferences into an existing generated repo, remove or rebuild the managed macos/defaults, macos/reports, default-apps.duti, and manifest outputs for the current selection. Also make the generated installer restore only files listed in macos/manifest.json, not every plist present in the directory.",
+      "failure_scenario": "A user first runs dotfriend with recommended macOS settings, committing Apple app preferences and keyboard shortcuts. Later they rerun the wizard with a custom selection that excludes apple_apps or screenshots into the same repo. generate_repo only ensures the macos directory exists and backup_macos_preferences writes new files on top of the old tree, while install.sh imports every plist under $DOTFILES_DIR/macos/defaults. The stale excluded plists remain in git and are restored on the next Mac, so the user's newer privacy choice is ignored and old preference data can still be pushed/restored."
+    },
+    {
+      "title": "duti export drops LaunchServices handlers that use role-specific keys",
+      "severity": "P2",
+      "file": "lib/macos_preferences.sh",
+      "line": 205,
+      "confidence": 0.78,
+      "autofix_class": "manual",
+      "owner": "downstream-resolver",
+      "requires_verification": true,
+      "pre_existing": false,
+      "suggested_fix": "Expand LSHandlers into duti rows for LSHandlerRoleAll, LSHandlerRoleViewer, LSHandlerRoleEditor, LSHandlerRoleShell, and other role-specific keys, preserving the corresponding duti role instead of forcing every rule to all. Add a fixture-based regression test with handlers that have only Viewer or Editor roles.",
+      "failure_scenario": "A user changes a default app association that macOS records as LSHandlerRoleViewer or LSHandlerRoleEditor rather than LSHandlerRoleAll, such as a viewer/editor-specific document type mapping. The backup filter selects only entries with LSHandlerRoleAll, so default-apps.duti is generated without that association. The generated install.sh runs successfully and duti is present, but the association is silently missing after restore."
+    }
+  ],
+  "residual_risks": [
+    "Generated defaults import is intentionally broad and can overwrite live machine settings without first exporting a restore-point backup; this may be acceptable for a restore script but should be documented or guarded.",
+    "Several report files include machine-identifying details such as hostnames, network services, printer destinations, and Time Machine destination metadata. That matches the requested system reports, but private-repo guidance should stay prominent.",
+    "Apple app preference domains may include user-specific state beyond harmless settings. The implementation skips third-party app preferences and text replacements, but the Apple-app boundary is still privacy-sensitive."
+  ],
+  "testing_gaps": [
+    "No regression covers rerunning generation into a non-empty repo after removing macOS preference categories, so stale files and stale restores are not detected.",
+    "The default-app test depends on the host LaunchServices database and only asserts that a duti file exists; it does not use a deterministic fixture with RoleAll, Viewer, Editor, Shell, URL scheme, and content type variants.",
+    "No generated install-script test executes the macOS defaults and duti restore blocks against a controlled fake defaults/duti PATH to prove soft-fail behavior and argument ordering."
+  ]
+}

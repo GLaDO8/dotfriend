@@ -1,0 +1,50 @@
+{
+  "reviewer": "testing",
+  "findings": [
+    {
+      "title": "macOS wizard choices are bypassed by tests",
+      "severity": "P2",
+      "file": "lib/wizard.sh",
+      "line": 642,
+      "confidence": 0.87,
+      "autofix_class": "manual",
+      "owner": "downstream-resolver",
+      "requires_verification": true,
+      "pre_existing": false,
+      "suggested_fix": "Add focused wizard tests that stub gum_choose and exercise all three branches in _step9_macos_defaults: recommended should serialize the intended category set, custom should serialize only selected labels, and skip/empty selection should write backup=false with no categories."
+    },
+    {
+      "title": "macOS backup regression test checks existence, not exported preference content",
+      "severity": "P2",
+      "file": "tests/generate_regressions.sh",
+      "line": 475,
+      "confidence": 0.84,
+      "autofix_class": "manual",
+      "owner": "downstream-resolver",
+      "requires_verification": true,
+      "pre_existing": false,
+      "suggested_fix": "Make the test deterministic by prepending stub macOS commands for defaults, plutil, scutil, networksetup, and related report commands. Feed known plist/json fixtures, then assert the exported keyboard-shortcut plist preserves both enabled and disabled shortcut state, text replacements are removed, and default-app duti rows contain the expected bundle, handler, and role values."
+    },
+    {
+      "title": "Generated restore behavior is only grepped, not executed",
+      "severity": "P2",
+      "file": "tests/generate_regressions.sh",
+      "line": 493,
+      "confidence": 0.81,
+      "autofix_class": "manual",
+      "owner": "downstream-resolver",
+      "requires_verification": true,
+      "pre_existing": false,
+      "suggested_fix": "Add a restore-side regression that runs the generated install.sh or phase_final in dry-run/fixture mode with stub defaults, duti, killall, and find inputs. Assert defaults import receives NSGlobalDomain and normal domains correctly, and duti is invoked with the tab-separated rule fields from macos/default-apps.duti."
+    }
+  ],
+  "residual_risks": [
+    "I did not execute the test suite because this persona review was scoped read-only; findings are based on the scoped diff and test inspection.",
+    "Some macOS domains may be absent on a given host, so even passing current tests may not prove behavior across supported macOS versions."
+  ],
+  "testing_gaps": [
+    "No coverage for recommended/custom/skip macOS wizard selection serialization.",
+    "No deterministic fixture coverage for keyboard shortcut enabled/disabled state or duti LSHandlers parsing.",
+    "No restore execution test proving generated defaults import and duti commands receive correct arguments."
+  ]
+}
