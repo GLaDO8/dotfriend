@@ -1,0 +1,25 @@
+{
+  "reviewer": "ce:review reliability persona",
+  "findings": [
+    {
+      "title": "macOS defaults restore restarts UI services during dry-run and no-op restores",
+      "severity": "P2",
+      "file": "lib/generate.sh",
+      "line": 676,
+      "confidence": 0.86,
+      "autofix_class": "safe_auto",
+      "owner": "review-fixer",
+      "requires_verification": true,
+      "pre_existing": false,
+      "suggested_fix": "Generate a restored_any flag in the macOS defaults block, set it only after at least one defaults import is attempted or succeeds, and run killall cfprefsd/Finder/Dock/SystemUIServer only when DRY_RUN is not true and restored_any is true. Alternatively route the restarts through soft_run with the same DRY_RUN guard."
+    }
+  ],
+  "residual_risks": [
+    "macOS defaults import remains inherently best-effort: some domains may be protected, ignored by current macOS versions, or require logout/reboot even when the command exits successfully.",
+    "Report-only captures for network, security, Time Machine, and printers suppress command errors, so missing system utilities or permission denials can produce sparse reports without failing generation."
+  ],
+  "testing_gaps": [
+    "No regression appears to assert that generated install.sh --dry-run avoids killall/defaults side effects for macOS preferences.",
+    "No regression appears to cover a custom selection containing only default_apps, where the generated defaults directory exists but contains no plist imports."
+  ]
+}

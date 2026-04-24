@@ -1,0 +1,37 @@
+{
+  "reviewer": "maintainability",
+  "findings": [
+    {
+      "title": "Consolidate hidden default-app selection path",
+      "severity": "P3",
+      "file": "lib/generate.sh",
+      "line": 916,
+      "confidence": 0.82,
+      "autofix_class": "manual",
+      "owner": "downstream-resolver",
+      "requires_verification": true,
+      "pre_existing": false,
+      "suggested_fix": "Move default-app association selection fully under macos_preferences.default_apps for new selections, and handle legacy dock.defaults with an explicit one-way compatibility adapter that de-duplicates categories before calling backup_macos_preferences. Remove DOCK_DEFAULTS from the wizard state/summary once legacy cache migration is isolated."
+    },
+    {
+      "title": "Unify macOS preference category metadata",
+      "severity": "P3",
+      "file": "lib/macos_preferences.sh",
+      "line": 7,
+      "confidence": 0.74,
+      "autofix_class": "manual",
+      "owner": "downstream-resolver",
+      "requires_verification": true,
+      "pre_existing": false,
+      "suggested_fix": "Replace the separate category label array, domains case statement, and backup special cases with one category registry that records id, label, kind (defaults/report/default_apps), and handler data. Derive wizard labels, recommended selections, validation, and backup dispatch from that registry so adding or renaming a category is a single-site change."
+    }
+  ],
+  "residual_risks": [
+    "Review was limited to maintainability concerns in the scoped diff; correctness and security risks in preference import/export semantics are left to their dedicated reviewers.",
+    "The new macOS preference categories touch OS-specific behavior that can drift between macOS releases, so registry design should leave room for version-gated categories or handlers."
+  ],
+  "testing_gaps": [
+    "No tests appear to cover legacy selections containing dock.defaults together with macos_preferences.default_apps, so duplicate category handling and migration behavior are unverified.",
+    "The regression test exercises a few categories but not the category registry itself; a lightweight test that every advertised category has a dispatch path would catch future no-op category additions."
+  ]
+}

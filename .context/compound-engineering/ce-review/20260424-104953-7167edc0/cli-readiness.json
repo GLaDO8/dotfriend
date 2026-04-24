@@ -1,0 +1,38 @@
+{
+  "reviewer": "cli-readiness",
+  "findings": [
+    {
+      "title": "Dock app layout is restored through macOS defaults even when the Dock layout wizard choice is off",
+      "severity": "P2",
+      "file": "lib/macos_preferences.sh",
+      "line": 58,
+      "confidence": 0.86,
+      "autofix_class": "manual",
+      "owner": "downstream-resolver",
+      "requires_verification": true,
+      "pre_existing": false,
+      "suggested_fix": "Treat the macOS Dock preference category as settings-only by removing app-layout keys such as persistent-apps, persistent-others, recent-apps, and recent-apps from the exported com.apple.dock plist, or split Dock app layout into the existing explicit Dock selection only. Add a generation regression where dock.backup is false and macos_preferences includes dock, then assert install.sh cannot restore Dock app order via defaults import."
+    },
+    {
+      "title": "Default app export drops non-all LaunchServices roles",
+      "severity": "P2",
+      "file": "lib/macos_preferences.sh",
+      "line": 205,
+      "confidence": 0.79,
+      "autofix_class": "manual",
+      "owner": "downstream-resolver",
+      "requires_verification": true,
+      "pre_existing": false,
+      "suggested_fix": "Export LSHandlerRoleAll, LSHandlerRoleViewer, LSHandlerRoleEditor, and LSHandlerRoleShell separately, mapping them to duti roles all/viewer/editor/shell. Keep the bundle id as the first column, the content type or URL scheme as the second column, and the mapped duti role as the third column; add a fixture-style regression with viewer/editor-only handlers to prove install.sh emits the expected duti invocations."
+    }
+  ],
+  "residual_risks": [
+    "Review was read-only and scoped to the provided diff; no interactive wizard or generated install script was executed in a real PTY.",
+    "macOS defaults domains are OS-version sensitive, so some exported domains may be absent or structurally different across supported macOS releases."
+  ],
+  "testing_gaps": [
+    "No regression asserts that selecting macOS Dock settings without selecting Dock layout preserves the user's explicit Dock-layout skip.",
+    "No fixture covers LaunchServices handlers that use LSHandlerRoleViewer, LSHandlerRoleEditor, or LSHandlerRoleShell without LSHandlerRoleAll.",
+    "No agent/automation-facing non-interactive fixture verifies the selections JSON for recommended versus custom macOS preference choices."
+  ]
+}
