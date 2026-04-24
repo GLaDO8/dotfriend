@@ -1,12 +1,24 @@
 # dotfriend
 
-A macOS CLI that turns your Mac into a version-controlled dotfiles repo — automatically.
+Automatically turn your Mac setup into a restorable dotfiles repo.
+
+`dotfriend` scans your Mac, lets you choose what to keep, and generates a Git-backed repo that can restore your shell, apps, packages, editor settings, AI coding tool configs, hooks, skills, and agent instructions on a new Mac.
 
 Built with bash and [Gum](https://github.com/charmbracelet/gum) (by Charm). No compilation, no package manager needed for the tool itself.
 
+## What are dotfiles?
+
+Dotfiles are the hidden config files and folders that make your tools feel like yours: shell settings, Git config, editor preferences, package lists, app configs, and AI coding agent setup.
+
+## dotfriend vs. Time Machine
+
+Time Machine backs up your whole Mac. `dotfriend` backs up your setup recipe.
+
+Use Time Machine to recover files and system snapshots. Use `dotfriend` to recreate your developer environment on a fresh Mac or keep your config versioned in Git.
+
 ## What it does
 
-**`dotfriend start`** — An interactive wizard that scans your Mac, lets you pick what to back up, and generates a complete `dotfiles` repository. It detects your apps, Homebrew packages, npm globals, shell configs, editor settings, agentic tool configs, and even your Dock layout.
+**`dotfriend start`** — An interactive wizard that scans your Mac, lets you pick what to back up, and generates a complete `dotfiles` repository. It detects your apps, Homebrew packages, npm globals, shell configs, editor settings, AI coding tool configs, and even your Dock layout.
 
 **`dotfriend sync`** — Keeps your repo in sync with your machine. Detects new brew packages, changed config files, and updated agent settings. Optionally commits and pushes to GitHub.
 
@@ -53,21 +65,14 @@ Homebrew and Gum are installed automatically if missing.
 - `~/.config/` directories for detected apps
 - Editor settings (VS Code, Cursor — including extensions)
 
-### Agentic tools (selective, smart backup)
-Only config files are backed up — never chat history, cache, or logs.
+### AI coding tools and agent configs
+Back up the setup that makes AI coding tools behave the way you expect: agent instructions, reusable skills, hooks, rules, MCP/server configs, plugins, and editor integration settings.
 
-| Tool | What gets backed up |
-|------|---------------------|
-| **Claude Code** | `CLAUDE.md`, `settings.json`, `hooks/`, `rules/`, `plugins/` |
-| **OpenAI Codex** | `AGENTS.md`, `RTK.md`, `CLAUDE.md`, `skills/`, `agent-docs/` |
-| **Cursor** | `settings.json`, `mcp.json`, `keybindings.json`, `extensions.txt`, `rules/` |
-| **Aider** | `.aider.conf.yml`, `.aider.model.settings.yml`, `.aiderignore` |
-| **Continue.dev** | `config.json`, `config.ts`, `.prompts/` |
-| **GitHub Copilot CLI** | `~/.config/github-copilot/` |
-| **Zed** | `settings.json`, `keymap.json`, `themes/` |
-| **Windsurf** | `settings.json`, `keybindings.json`, `extensions/` |
-| **Cline** | `settings.json` |
-| **Trae** | `settings.json`, `keybindings.json`, `extensions/` |
+Only config files are backed up — never chat history, caches, or logs.
+
+Examples include `AGENTS.md`, `CLAUDE.md`, `settings.json`, `mcp.json`, `hooks/`, `rules/`, `skills/`, `plugins/`, and tool-specific config under `~/.config`.
+
+Back up configs from tools like Claude Code, OpenAI Codex, Cursor, opencode, Windsurf, Aider, Continue.dev, GitHub Copilot CLI, Zed, Cline, and Trae.
 
 ## Requirements
 
@@ -82,7 +87,7 @@ Most dotfiles tools expect you to hand-write your config. `dotfriend` starts fro
 
 - Want a dotfiles repo but haven't gotten around to making one
 - Frequently set up new Macs and want a one-command restore
-- Use multiple agentic AI tools and want their configs versioned
+- Use multiple AI coding tools and want their configs versioned
 - Prefer bash + Gum over compiled binaries for transparency and hackability
 
 ## License
