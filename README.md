@@ -1,12 +1,30 @@
 # dotfriend
 
-[![npm version](https://img.shields.io/npm/v/dotfriend.svg)](https://www.npmjs.com/package/dotfriend) [![License](https://img.shields.io/npm/l/dotfriend.svg)](https://www.npmjs.com/package/dotfriend)
+Automatically turn your Mac setup into a restorable dotfiles repo.
+
+`dotfriend` scans your Mac, lets you choose what to keep, and generates a Git-backed repo that can restore your shell, apps, packages, editor settings, AI coding tool configs, hooks, skills, and agent instructions on a new Mac.
 
 Back up your Mac configuration, generate a restorable dotfiles repo, and push it to GitHub.
 
-`dotfriend` scans the machine you already use, helps you choose which configs and packages to track, then writes a dotfiles repo with install, bootstrap, validation, and backup scripts.
+## What are dotfiles?
 
-## Quick start
+Dotfiles are the hidden config files and folders that make your tools feel like yours: shell settings, Git config, editor preferences, package lists, app configs, and AI coding agent setup.
+
+## dotfriend vs. Time Machine
+
+Time Machine backs up your whole Mac. `dotfriend` backs up your setup recipe.
+
+Use Time Machine to recover files and system snapshots. Use `dotfriend` to recreate your developer environment on a fresh Mac or keep your config versioned in Git.
+
+## What it does
+
+**`dotfriend start`** — An interactive wizard that scans your Mac, lets you pick what to back up, and generates a complete `dotfiles` repository. It detects your apps, Homebrew packages, npm globals, shell configs, editor settings, AI coding tool configs, and even your Dock layout.
+
+**`dotfriend sync`** — Keeps your repo in sync with your machine. Detects new brew packages, changed config files, and updated agent settings. Optionally commits and pushes to GitHub.
+
+The generated repo includes a `bootstrap.sh` for brand-new Macs and an `install.sh` for full restoration — so you can go from a fresh macOS install to a fully configured machine in one command.
+
+## Installation
 
 ```bash
 npx dotfriend start
@@ -27,7 +45,37 @@ dotfriend start
 4. `dotfriend` can create and push the repo to GitHub.
 5. `dotfriend sync` keeps the repo updated as your machine changes.
 
-The generated repo is meant to be useful in both directions: restore a new Mac from your repo, then sync later machine changes back into the repo.
+| Command | Description |
+|---------|-------------|
+| `dotfriend start` | Interactive wizard. Scans your Mac and generates the dotfiles repo. |
+| `dotfriend start --dry-run` | Preview what would be generated without writing files. |
+| `dotfriend sync` | Incremental sync. Update the repo with changes from your machine. |
+| `dotfriend sync --dry-run` | Preview what would change without applying. |
+| `dotfriend sync --no-commit` | Apply changes but don't commit. |
+| `dotfriend sync --quick` | Non-interactive sync. Skip prompts and commit with a default message. |
+| `dotfriend --help` | Show usage. |
+| `dotfriend --version` | Show version. |
+
+## What gets backed up
+
+### System & packages
+- **Homebrew** — taps, formulae, casks, Mac App Store apps (via `mas`)
+- **npm** — globally installed packages
+- **Dock layout** — app list (restorable via `dockutil`)
+
+### Config files
+- Shell configs (`.zshrc`, `.bashrc`, `.gitconfig`, `.tmux.conf`, etc.)
+- `~/.config/` directories for detected apps
+- Editor settings (VS Code, Cursor — including extensions)
+
+### AI coding tools and agent configs
+Back up the setup that makes AI coding tools behave the way you expect: agent instructions, reusable skills, hooks, rules, MCP/server configs, plugins, and editor integration settings.
+
+Only config files are backed up — never chat history, caches, or logs.
+
+Examples include `AGENTS.md`, `CLAUDE.md`, `settings.json`, `mcp.json`, `hooks/`, `rules/`, `skills/`, `plugins/`, and tool-specific config under `~/.config`.
+
+Back up configs from tools like Claude Code, OpenAI Codex, Cursor, opencode, Windsurf, Aider, Continue.dev, GitHub Copilot CLI, Zed, Cline, and Trae.
 
 ## Features
 
@@ -105,7 +153,10 @@ dotfiles/
 - Node.js 14 or newer for the npm wrapper
 - Bash 4 or newer
 
-`dotfriend` bootstraps its runtime dependencies before running `start` or `sync`, including Homebrew and Gum when needed.
+- Want a dotfiles repo but haven't gotten around to making one
+- Frequently set up new Macs and want a one-command restore
+- Use multiple AI coding tools and want their configs versioned
+- Prefer bash + Gum over compiled binaries for transparency and hackability
 
 ## License
 
