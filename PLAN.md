@@ -1,1 +1,0 @@
-plans/dotfriend-coverage-functionality-performance-plan-2026-04-23.md
