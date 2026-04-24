@@ -1,22 +1,22 @@
+[![npm version](https://badge.fury.io/js/dotfriend.svg)](https://badge.fury.io/js/dotfriend)
+
 # dotfriend
 
 Automatically turn your Mac setup into a restorable dotfiles repo.
 
-`dotfriend` scans your Mac, lets you choose what to keep, and generates a Git-backed repo that can restore your shell, apps, packages, editor settings, AI coding tool configs, hooks, skills, and agent instructions on a new Mac.
-
-Back up your Mac configuration, generate a restorable dotfiles repo, and push it to GitHub.
+dotfriend scans your Mac, lets you choose what to backup, and generates a repo that can restore your shell, apps, packages, editor settings, AI coding tool configs, hooks, skills, and agent instructions on a new Mac.
 
 ## What are dotfiles?
 
-Dotfiles are the hidden config files and folders that make your tools feel like yours: shell settings, Git config, editor preferences, package lists, app configs, and AI coding agent setup.
+Dotfiles are the hidden config files and folders (that start with a `.`) that store all your settings, configurations, preferences and coding agent setups.
 
-## dotfriend vs. Time Machine
+## Why not just use Time Machine?
 
-Time Machine backs up your whole Mac. `dotfriend` backs up your setup recipe.
+Time Machine backs up your whole Mac, including all the junk your Mac built through usage. dotfriend only backs up your setup recipe.
 
-Use Time Machine to recover files and system snapshots. Use `dotfriend` to recreate your developer environment on a fresh Mac or keep your config versioned in Git.
+Use Time Machine to recover files and system snapshots. Use `dotfriend` to recreate your Mac personalisation and developer settings on a fresh Mac.
 
-## What it does
+## How dotfriend works
 
 **`dotfriend start`** — An interactive wizard that scans your Mac, lets you pick what to back up, and generates a complete `dotfiles` repository. It detects your apps, Homebrew packages, npm globals, shell configs, editor settings, AI coding tool configs, and even your Dock layout.
 
@@ -146,17 +146,6 @@ dotfiles/
 - `scripts/backup.sh` for syncing machine state back into the repo
 - `scripts/validate.sh` for checking whether expected tools and files are present
 - `.dotfriend/` metadata used by future syncs
-
-## Requirements
-
-- macOS
-- Node.js 14 or newer for the npm wrapper
-- Bash 4 or newer
-
-- Want a dotfiles repo but haven't gotten around to making one
-- Frequently set up new Macs and want a one-command restore
-- Use multiple AI coding tools and want their configs versioned
-- Prefer bash + Gum over compiled binaries for transparency and hackability
 
 ## License
 
