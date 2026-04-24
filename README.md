@@ -1,89 +1,111 @@
 # dotfriend
 
-A macOS CLI that turns your Mac into a version-controlled dotfiles repo — automatically.
+[![npm version](https://img.shields.io/npm/v/dotfriend.svg)](https://www.npmjs.com/package/dotfriend) [![License](https://img.shields.io/npm/l/dotfriend.svg)](https://www.npmjs.com/package/dotfriend)
 
-Built with bash and [Gum](https://github.com/charmbracelet/gum) (by Charm). No compilation, no package manager needed for the tool itself.
+Back up your Mac configuration, generate a restorable dotfiles repo, and push it to GitHub.
 
-## What it does
+`dotfriend` scans the machine you already use, helps you choose which configs and packages to track, then writes a dotfiles repo with install, bootstrap, validation, and backup scripts.
 
-**`dotfriend start`** — An interactive wizard that scans your Mac, lets you pick what to back up, and generates a complete `dotfiles` repository. It detects your apps, Homebrew packages, npm globals, shell configs, editor settings, agentic tool configs, and even your Dock layout.
-
-**`dotfriend sync`** — Keeps your repo in sync with your machine. Detects new brew packages, changed config files, and updated agent settings. Optionally commits and pushes to GitHub.
-
-The generated repo includes a `bootstrap.sh` for brand-new Macs and an `install.sh` for full restoration — so you can go from a fresh macOS install to a fully configured machine in one command.
-
-## Installation
+## Quick start
 
 ```bash
 npx dotfriend start
 ```
 
-Or clone and run directly:
+Or install it globally:
 
 ```bash
-git clone https://github.com/GLaDO8/dotfriend.git
-cd dotfriend
-./dotfriend start
+npm install -g dotfriend
+dotfriend start
 ```
 
-Homebrew and Gum are installed automatically if missing.
+## How it works
+
+1. `dotfriend start` scans your Mac.
+2. You choose which configs, packages, apps, and tools to track.
+3. `dotfriend` generates a dotfiles repo.
+4. `dotfriend` can create and push the repo to GitHub.
+5. `dotfriend sync` keeps the repo updated as your machine changes.
+
+The generated repo is meant to be useful in both directions: restore a new Mac from your repo, then sync later machine changes back into the repo.
+
+## Features
+
+- Interactive macOS discovery
+- Homebrew taps, formulae, casks, and Mac App Store apps
+- Global npm package backup
+- Shell, Git, editor, and app config backup
+- Supported AI coding tool config backup
+- Dock layout capture
+- Generated install, bootstrap, validate, and backup scripts
+- Optional GitHub repo creation and push
+- Incremental sync for future changes
 
 ## Commands
 
 | Command | Description |
-|---------|-------------|
-| `dotfriend start` | Interactive wizard. Scans your Mac and generates the dotfiles repo. |
-| `dotfriend start --dry-run` | Preview what would be generated without writing files. |
-| `dotfriend sync` | Incremental sync. Update the repo with changes from your machine. |
-| `dotfriend sync --dry-run` | Preview what would change without applying. |
-| `dotfriend sync --no-commit` | Apply changes but don't commit. |
-| `dotfriend sync --quick` | Non-interactive sync. Skip prompts and commit with a default message. |
-| `dotfriend --help` | Show usage. |
-| `dotfriend --version` | Show version. |
+| --- | --- |
+| `dotfriend start` | Run the first-time wizard and generate a dotfiles repo. |
+| `dotfriend start --dry-run` | Preview generation without writing files. |
+| `dotfriend sync` | Update an existing generated repo from the current machine. |
+| `dotfriend sync --dry-run` | Preview sync changes without applying them. |
+| `dotfriend sync --no-commit` | Apply sync changes without creating a commit. |
+| `dotfriend sync --quick` | Run a non-interactive sync with default choices. |
+| `dotfriend --help` | Show CLI help. |
+| `dotfriend --version` | Show the installed version. |
 
-## What gets backed up
+## What gets captured
 
-### System & packages
-- **Homebrew** — taps, formulae, casks, Mac App Store apps (via `mas`)
-- **npm** — globally installed packages
-- **Dock layout** — app list (restorable via `dockutil`)
+`dotfriend` focuses on reproducible setup state:
 
-### Config files
-- Shell configs (`.zshrc`, `.bashrc`, `.gitconfig`, `.tmux.conf`, etc.)
-- `~/.config/` directories for detected apps
-- Editor settings (VS Code, Cursor — including extensions)
+- Homebrew taps, formulae, casks, and Mac App Store apps when available
+- Global npm packages
+- Common shell and Git dotfiles
+- App config directories under `~/.config`
+- VS Code and Cursor settings and extensions
+- Supported AI coding tool configuration files
+- Dock layout
 
-### Agentic tools (selective, smart backup)
-Only config files are backed up — never chat history, cache, or logs.
+## What is not captured yet
 
-| Tool | What gets backed up |
-|------|---------------------|
-| **Claude Code** | `CLAUDE.md`, `settings.json`, `hooks/`, `rules/`, `plugins/` |
-| **OpenAI Codex** | `AGENTS.md`, `RTK.md`, `CLAUDE.md`, `skills/`, `agent-docs/` |
-| **Cursor** | `settings.json`, `mcp.json`, `keybindings.json`, `extensions.txt`, `rules/` |
-| **Aider** | `.aider.conf.yml`, `.aider.model.settings.yml`, `.aiderignore` |
-| **Continue.dev** | `config.json`, `config.ts`, `.prompts/` |
-| **GitHub Copilot CLI** | `~/.config/github-copilot/` |
-| **Zed** | `settings.json`, `keymap.json`, `themes/` |
-| **Windsurf** | `settings.json`, `keybindings.json`, `extensions/` |
-| **Cline** | `settings.json` |
-| **Trae** | `settings.json`, `keybindings.json`, `extensions/` |
+`dotfriend` intentionally avoids secrets and transient state. It does not currently capture:
+
+- Secrets, passwords, SSH keys, API tokens, or keychain items
+- Full application data, databases, documents, downloads, photos, or media libraries
+- Browser profiles, cookies, sessions, or history
+- Chat histories, agent run logs, caches, and other transient AI tool state
+- macOS system defaults beyond the tracked app, package, config, and Dock state
+- App-specific settings that live outside common config locations unless `dotfriend` knows how to detect them
+
+## Generated repo
+
+A generated repo includes:
+
+```txt
+dotfiles/
+  Brewfile
+  install.sh
+  bootstrap.sh
+  scripts/
+    backup.sh
+    validate.sh
+  .dotfriend/
+```
+
+- `Brewfile` for Homebrew packages and apps
+- `install.sh` for restoring onto an existing Mac
+- `bootstrap.sh` for first-run setup on a new Mac
+- `scripts/backup.sh` for syncing machine state back into the repo
+- `scripts/validate.sh` for checking whether expected tools and files are present
+- `.dotfriend/` metadata used by future syncs
 
 ## Requirements
 
-- macOS (Apple Silicon or Intel)
-- bash 4+
+- macOS
+- Node.js 14 or newer for the npm wrapper
+- Bash 4 or newer
 
-`dotfriend` automatically installs **Homebrew** and **Gum** if they're not present. Optional enhancements come from `jq`, `gh`, `mas`, and `npm` if you have them.
-
-## Why dotfriend?
-
-Most dotfiles tools expect you to hand-write your config. `dotfriend` starts from your *actual* machine state and builds the repo for you. It's designed for people who:
-
-- Want a dotfiles repo but haven't gotten around to making one
-- Frequently set up new Macs and want a one-command restore
-- Use multiple agentic AI tools and want their configs versioned
-- Prefer bash + Gum over compiled binaries for transparency and hackability
+`dotfriend` bootstraps its runtime dependencies before running `start` or `sync`, including Homebrew and Gum when needed.
 
 ## License
 
